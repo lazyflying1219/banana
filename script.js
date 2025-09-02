@@ -17,14 +17,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Functions ---
 
-    // 1. Load settings from localStorage (移除了responseFormat)
+    // 1. Load settings (无变化)
     function loadSettings() {
         apiUrlInput.value = localStorage.getItem('apiUrl') || '';
         apiKeyInput.value = localStorage.getItem('apiKey') || '';
         apiModelInput.value = localStorage.getItem('apiModel') || '';
     }
 
-    // 2. Save settings to localStorage (移除了responseFormat)
+    // 2. Save settings (无变化)
     function saveSettings() {
         localStorage.setItem('apiUrl', apiUrlInput.value);
         localStorage.setItem('apiKey', apiKeyInput.value);
@@ -86,18 +86,18 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(clickedTab.dataset.tab).classList.add('active');
     }
 
-    // ★★★★★ 7. Generate image with AUTO-DETECT logic ★★★★★
+    // ★★★★★ 7. Generate Image via CHAT INTERFACE ONLY (Definitive Version) ★★★★★
     async function generateImage() {
         const apiUrl = apiUrlInput.value.trim();
         const apiKey = apiKeyInput.value.trim();
         const model = apiModelInput.value.trim();
-        const prompt = promptInput.value.trim();
+        const userPrompt = promptInput.value.trim();
 
         if (!apiUrl || !apiKey || !model) {
-            alert('请先完成并保存API配置！');
+            alert('请先完成并保存API配置！请确保模型名称是聊天模型 (如 gpt-4o)，而不是图片模型！');
             return;
         }
-        if (!prompt) {
+        if (!userPrompt) {
             alert('请输入提示词！');
             return;
         }
@@ -109,8 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
         generateBtn.textContent = '生成中...';
 
         try {
-            // 我们默认请求URL，因为这样更高效。但后续代码能处理B64的响应。
-            const response = await fetch(`${apiUrl}/images/generations`, {
+            // 始终使用聊天接口 /chat/completions
+            const response = await fetch(`${apiUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -118,10 +118,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({
                     model: model,
-                    prompt: prompt,
-                    n: 1,
-                    size: "1024x1024",
-                    response_format: "url" // 优先请求URL
+                    messages: [
+                        {
+                            "role": "user",
+                            "content": `请严格根据以下描述生成一张图片，不要添加任何额外评论: "${userPrompt}"`
+                        }
+                    ],
+                    max_tokens: 1500 // 留足空间给可能返回的Base64数据
                 })
             });
 
@@ -132,24 +135,37 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            const result = data.data && data.data[0];
-            if (!result) {
-                throw new Error("API返回了无效的数据结构。");
-            }
+            const message = data.choices[0]?.message;
+            if (!message) throw new Error("API返回了无效的响应结构。");
 
             const img = document.createElement('img');
-            img.alt = prompt;
+            img.alt = userPrompt;
+            let imageUrlFound = false;
 
-            // 核心兼容逻辑：检查URL是否存在，如果不存在，则检查Base64
-            if (result.url) {
-                // 方式一：API返回了URL
-                img.src = result.url;
-            } else if (result.b64_json) {
-                // 方式二：API返回了Base64数据
-                img.src = `data:image/png;base64,${result.b64_json}`;
-            } else {
-                // 两种格式都未找到
-                throw new Error("API响应中既未找到URL也未找到Base64数据。");
+            // 智能解析逻辑：
+            // 现代模型(如GPT-4o)返回的是一个内容数组
+            if (Array.isArray(message.content)) {
+                for (const contentPart of message.content) {
+                    if (contentPart.type === 'image_url') {
+                        // image_url.url 可能直接是 http://... 或 data:image/png;base64,...
+                        // <img> 标签都能识别
+                        img.src = contentPart.image_url.url;
+                        imageUrlFound = true;
+                        break; 
+                    }
+                }
+            } 
+            // 兼容老模型或非标准API，返回的是一个包含URL的字符串
+            else if (typeof message.content === 'string') {
+                const urlMatch = message.content.match(/\((https?:\/\/[^\s)]+)\)/) || message.content.match(/https?:\/\/[^\s]+/);
+                if (urlMatch) {
+                    img.src = urlMatch[0].replace('(', '').replace(')', '');
+                    imageUrlFound = true;
+                }
+            }
+
+            if (!imageUrlFound) {
+                throw new Error("模型回复中未找到有效的图片URL或Base64数据。模型回复: " + (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)));
             }
             
             loader.style.display = 'none';
