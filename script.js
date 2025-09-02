@@ -97,61 +97,95 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(clickedTab.dataset.tab).classList.add('active');
     }
 
-    // 7. Generate image via API call
+    // 7. Generate image via API call (MODIFIED FUNCTION)
     async function generateImage() {
         const apiUrl = apiUrlInput.value.trim();
         const apiKey = apiKeyInput.value.trim();
         const model = apiModelInput.value.trim();
-        const prompt = promptInput.value.trim();
+        const userPrompt = promptInput.value.trim();
 
         if (!apiUrl || !apiKey || !model) {
             alert('请先完成并保存API配置！');
             return;
         }
-        if (!prompt) {
+        if (!userPrompt) {
             alert('请输入提示词！');
             return;
         }
 
         loader.style.display = 'block';
-        imageResultContainer.innerHTML = ''; // Clear previous result
+        imageResultContainer.innerHTML = '';
         imageResultContainer.appendChild(loader);
         generateBtn.disabled = true;
         generateBtn.textContent = '生成中...';
 
         try {
-            // 注意：这里的请求体格式是基于OpenAI DALL-E API的。
-            // 如果你使用的API有不同的格式，需要修改这里的body。
-            const response = await fetch(`${apiUrl}/images/generations`, {
+            // ★★★★★ CORE CHANGE START ★★★★★
+
+            // Use the Chat Completions endpoint
+            const response = await fetch(`${apiUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
+                // Re-structured body for chat models that can generate images (like gpt-4o)
                 body: JSON.stringify({
                     model: model,
-                    prompt: prompt,
-                    n: 1,
-                    size: "1024x1024", // 你可以根据需要修改尺寸
-                    response_format: "url" // 我们需要API返回图片URL
+                    messages: [
+                        {
+                            "role": "user",
+                            // We instruct the model to generate an image based on the user's prompt.
+                            "content": `根据以下描述生成一张图片: "${userPrompt}"`
+                        }
+                    ],
+                    max_tokens: 1024 // Allow enough space for the response containing the URL
                 })
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(`API Error: ${errorData.error.message}`);
+                const errorMessage = errorData.error?.message || JSON.stringify(errorData);
+                throw new Error(`API Error: ${errorMessage}`);
             }
 
             const data = await response.json();
-            const imageUrl = data.data[0].url;
+            
+            // Parse the image URL from the chat response
+            const assistantResponse = data.choices[0]?.message?.content;
+            if (!assistantResponse) {
+                throw new Error("API返回了无效的响应格式。");
+            }
+
+            // Use regex to find a URL within markdown image syntax: ![...](URL) or just a raw URL.
+            // This regex looks for a URL inside parentheses, which is common in markdown.
+            const urlMatch = assistantResponse.match(/\((https?:\/\/[^\s)]+)\)/);
+            let imageUrl = null;
+
+            if (urlMatch && urlMatch[1]) {
+                imageUrl = urlMatch[1];
+            } else {
+                // Fallback: If no markdown pattern is found, try to find the first raw URL in the text.
+                const fallbackUrlMatch = assistantResponse.match(/https?:\/\/[^\s]+/);
+                if (fallbackUrlMatch) {
+                    imageUrl = fallbackUrlMatch[0];
+                }
+            }
+            
+            if (!imageUrl) {
+                // If no URL is found at all, show the model's text response for debugging.
+                throw new Error("模型没有返回有效的图片URL。模型回复: " + assistantResponse);
+            }
 
             const img = document.createElement('img');
             img.src = imageUrl;
-            img.alt = prompt;
+            img.alt = userPrompt;
             
             loader.style.display = 'none';
             imageResultContainer.innerHTML = '';
             imageResultContainer.appendChild(img);
+
+            // ★★★★★ CORE CHANGE END ★★★★★
 
         } catch (error) {
             console.error('Generation failed:', error);
