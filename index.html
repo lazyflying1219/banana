@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 图片生成器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧灵感区 -->
+        <aside class="sidebar">
+            <h2>灵感画廊</h2>
+            <input type="search" id="search-prompts" placeholder="搜索提示词...">
+            <div class="inspiration-list" id="inspiration-list">
+                <!-- 灵感案例将由JS动态加载 -->
+            </div>
+        </aside>
+
+        <!-- 右侧主操作区 -->
+        <main class="main-content">
+            <section class="settings-panel">
+                <h3>API 配置</h3>
+                <div class="settings-grid">
+                    <input type="text" id="api-url" placeholder="API URL (例如 https://api.openai.com/v1)">
+                    <input type="password" id="api-key" placeholder="API Key (保存在浏览器本地)">
+                    <input type="text" id="api-model" placeholder="模型名称 (例如 dall-e-3)">
+                </div>
+                <button id="save-settings-btn">保存配置</button>
+            </section>
+
+            <div class="tabs">
+                <button class="tab-link active" data-tab="txt2img">文生图</button>
+                <button class="tab-link" data-tab="img2img">图生图 (暂未实现)</button>
+            </div>
+
+            <div id="txt2img" class="tab-content active">
+                <textarea id="prompt-input" rows="5" placeholder="在这里输入你的图片描述提示词..."></textarea>
+                <button id="generate-btn">生成图片</button>
+            </div>
+
+            <div id="img2img" class="tab-content">
+                <p style="text-align: center; margin: 20px 0;">图生图功能需要API支持，并且通常使用不同的接口格式。此为UI占位符。</p>
+                <div class="img2img-controls">
+                    <div class="upload-box">
+                        <input type="file" id="img-input" accept="image/*">
+                        <label for="img-input">点击或拖拽上传初始图片</label>
+                    </div>
+                    <textarea id="img-prompt-input" rows="3" placeholder="输入修改图片的提示词..."></textarea>
+                </div>
+                 <button id="generate-img2img-btn" disabled>生成图片</button>
+            </div>
+
+            <div class="result-panel">
+                <h3>生成结果</h3>
+                <div id="image-result" class="image-result">
+                    <div class="placeholder">等待生成...</div>
+                    <div id="loader" class="loader" style="display: none;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
