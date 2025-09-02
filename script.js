@@ -17,17 +17,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Functions ---
 
-    // 1. Load settings from localStorage
+    // 1. Load settings from localStorage (移除了responseFormat)
     function loadSettings() {
-        const url = localStorage.getItem('apiUrl');
-        const key = localStorage.getItem('apiKey');
-        const model = localStorage.getItem('apiModel');
-        if (url) apiUrlInput.value = url;
-        if (key) apiKeyInput.value = key;
-        if (model) apiModelInput.value = model;
+        apiUrlInput.value = localStorage.getItem('apiUrl') || '';
+        apiKeyInput.value = localStorage.getItem('apiKey') || '';
+        apiModelInput.value = localStorage.getItem('apiModel') || '';
     }
 
-    // 2. Save settings to localStorage
+    // 2. Save settings to localStorage (移除了responseFormat)
     function saveSettings() {
         localStorage.setItem('apiUrl', apiUrlInput.value);
         localStorage.setItem('apiKey', apiKeyInput.value);
@@ -41,13 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 2000);
     }
 
-    // 3. Load inspiration prompts from JSON
+    // 3. Load inspiration prompts (无变化)
     async function loadInspirationPrompts() {
         try {
             const response = await fetch('./prompts.json');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             allPrompts = await response.json();
             displayPrompts(allPrompts);
         } catch (error) {
@@ -56,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 4. Display prompts in the sidebar
+    // 4. Display prompts (无变化)
     function displayPrompts(prompts) {
         inspirationList.innerHTML = '';
         if (prompts.length === 0) {
@@ -66,10 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         prompts.forEach(item => {
             const div = document.createElement('div');
             div.className = 'inspiration-item';
-            div.innerHTML = `
-                <img src="${item.image_url}" alt="Inspiration image" loading="lazy">
-                <p>${item.prompt}</p>
-            `;
+            div.innerHTML = `<img src="${item.image_url}" alt="Inspiration image" loading="lazy"><p>${item.prompt}</p>`;
             div.addEventListener('click', () => {
                 promptInput.value = item.prompt;
                 promptInput.focus();
@@ -78,37 +70,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // 5. Filter prompts based on search input
+    // 5. Filter prompts (无变化)
     function filterPrompts() {
         const searchTerm = searchInput.value.toLowerCase();
-        const filteredPrompts = allPrompts.filter(item => 
-            item.prompt.toLowerCase().includes(searchTerm)
-        );
+        const filteredPrompts = allPrompts.filter(item => item.prompt.toLowerCase().includes(searchTerm));
         displayPrompts(filteredPrompts);
     }
 
-    // 6. Handle tab switching
+    // 6. Handle tab switching (无变化)
     function handleTabSwitch(e) {
         tabs.forEach(tab => tab.classList.remove('active'));
         tabContents.forEach(content => content.classList.remove('active'));
-
         const clickedTab = e.currentTarget;
         clickedTab.classList.add('active');
         document.getElementById(clickedTab.dataset.tab).classList.add('active');
     }
 
-    // 7. Generate image via API call (MODIFIED FUNCTION)
+    // ★★★★★ 7. Generate image with AUTO-DETECT logic ★★★★★
     async function generateImage() {
         const apiUrl = apiUrlInput.value.trim();
         const apiKey = apiKeyInput.value.trim();
         const model = apiModelInput.value.trim();
-        const userPrompt = promptInput.value.trim();
+        const prompt = promptInput.value.trim();
 
         if (!apiUrl || !apiKey || !model) {
             alert('请先完成并保存API配置！');
             return;
         }
-        if (!userPrompt) {
+        if (!prompt) {
             alert('请输入提示词！');
             return;
         }
@@ -120,26 +109,19 @@ document.addEventListener('DOMContentLoaded', () => {
         generateBtn.textContent = '生成中...';
 
         try {
-            // ★★★★★ CORE CHANGE START ★★★★★
-
-            // Use the Chat Completions endpoint
-            const response = await fetch(`${apiUrl}/chat/completions`, {
+            // 我们默认请求URL，因为这样更高效。但后续代码能处理B64的响应。
+            const response = await fetch(`${apiUrl}/images/generations`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                // Re-structured body for chat models that can generate images (like gpt-4o)
                 body: JSON.stringify({
                     model: model,
-                    messages: [
-                        {
-                            "role": "user",
-                            // We instruct the model to generate an image based on the user's prompt.
-                            "content": `根据以下描述生成一张图片: "${userPrompt}"`
-                        }
-                    ],
-                    max_tokens: 1024 // Allow enough space for the response containing the URL
+                    prompt: prompt,
+                    n: 1,
+                    size: "1024x1024",
+                    response_format: "url" // 优先请求URL
                 })
             });
 
@@ -150,42 +132,29 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            
-            // Parse the image URL from the chat response
-            const assistantResponse = data.choices[0]?.message?.content;
-            if (!assistantResponse) {
-                throw new Error("API返回了无效的响应格式。");
-            }
-
-            // Use regex to find a URL within markdown image syntax: ![...](URL) or just a raw URL.
-            // This regex looks for a URL inside parentheses, which is common in markdown.
-            const urlMatch = assistantResponse.match(/\((https?:\/\/[^\s)]+)\)/);
-            let imageUrl = null;
-
-            if (urlMatch && urlMatch[1]) {
-                imageUrl = urlMatch[1];
-            } else {
-                // Fallback: If no markdown pattern is found, try to find the first raw URL in the text.
-                const fallbackUrlMatch = assistantResponse.match(/https?:\/\/[^\s]+/);
-                if (fallbackUrlMatch) {
-                    imageUrl = fallbackUrlMatch[0];
-                }
-            }
-            
-            if (!imageUrl) {
-                // If no URL is found at all, show the model's text response for debugging.
-                throw new Error("模型没有返回有效的图片URL。模型回复: " + assistantResponse);
+            const result = data.data && data.data[0];
+            if (!result) {
+                throw new Error("API返回了无效的数据结构。");
             }
 
             const img = document.createElement('img');
-            img.src = imageUrl;
-            img.alt = userPrompt;
+            img.alt = prompt;
+
+            // 核心兼容逻辑：检查URL是否存在，如果不存在，则检查Base64
+            if (result.url) {
+                // 方式一：API返回了URL
+                img.src = result.url;
+            } else if (result.b64_json) {
+                // 方式二：API返回了Base64数据
+                img.src = `data:image/png;base64,${result.b64_json}`;
+            } else {
+                // 两种格式都未找到
+                throw new Error("API响应中既未找到URL也未找到Base64数据。");
+            }
             
             loader.style.display = 'none';
             imageResultContainer.innerHTML = '';
             imageResultContainer.appendChild(img);
-
-            // ★★★★★ CORE CHANGE END ★★★★★
 
         } catch (error) {
             console.error('Generation failed:', error);
@@ -197,13 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
     // --- Event Listeners ---
     saveSettingsBtn.addEventListener('click', saveSettings);
     searchInput.addEventListener('input', filterPrompts);
     tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
     generateBtn.addEventListener('click', generateImage);
-
 
     // --- Initializations ---
     loadSettings();
