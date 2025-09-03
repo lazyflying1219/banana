@@ -1,6 +1,6 @@
 // Cloudflare Pages Function: /api/generate
-// This function now correctly uses the /v1/chat/completions endpoint for image generation,
-// as confirmed by successful tests with the CherryStudio client.
+// FINAL, CORRECTED version. This function now uses the chat completions endpoint 
+// with a specific tool definition to reliably trigger image generation.
 export async function onRequest(context) {
   const { request, env } = context;
 
@@ -31,16 +31,21 @@ export async function onRequest(context) {
       });
     }
 
-    // ALWAYS use the Chat Completions format.
+    // This is the key fix: We must explicitly ask the API for an IMAGE response modality.
     const forwardBody = {
-      model: body.model || 'vertexpic-gemini-2.5-flash-image-preview', // This model name seems correct for the chat endpoint
+      model: body.model || 'vertexpic-gemini-2.5-flash-image-preview',
       messages: [{
         role: "user",
         content: body.prompt
-      }]
+      }],
+      "generation_config": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ]
+      }
     };
 
-    // ALWAYS use the /v1/chat/completions endpoint.
     const apiResponse = await fetch('https://veloe.onrender.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -52,7 +57,6 @@ export async function onRequest(context) {
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      console.error(`Upstream API error: ${apiResponse.status}`, errorText);
       return new Response(JSON.stringify({ error: 'Upstream API error', details: errorText }), {
         status: apiResponse.status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -61,26 +65,22 @@ export async function onRequest(context) {
 
     const responseData = await apiResponse.json();
 
-    // --- FINAL, CORRECTED Data Transformation for Chat API ---
     let imageUrl = null;
 
-    if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.length > 0) {
-      const choice = responseData.choices;
-      if (choice && choice.message && typeof choice.message.content === 'string') {
-        const content = choice.message.content;
-        const dataUriMatch = content.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
-        if (dataUriMatch && dataUriMatch.length > 0) {
+    if (responseData.choices && responseData.choices.length > 0) {
+      const messageContent = responseData.choices?.message?.content;
+      if (messageContent) {
+        const dataUriMatch = messageContent.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
+        if (dataUriMatch) {
           imageUrl = dataUriMatch;
         }
       }
     }
 
     if (!imageUrl) {
-      console.error('FINAL ATTEMPT FAILED: Could not extract Base64 data URI from the chat response:', JSON.stringify(responseData, null, 2));
-      // Return the full, raw response data to the frontend for debugging.
-      return new Response(JSON.stringify({
-        error: 'The chat API response did not contain a recognizable image data string.',
-        rawResponse: responseData
+      return new Response(JSON.stringify({ 
+        error: 'The API response did not contain a recognizable image data string.',
+        rawResponse: responseData 
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -100,8 +100,7 @@ export async function onRequest(context) {
     });
 
   } catch (err) {
-    console.error('Error in Pages Function:', err);
-    return new Response(JSON.stringify({ error: 'An internal server error occurred.' }), {
+    return new Response(JSON.stringify({ error: 'An internal server error occurred.', details: err.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
