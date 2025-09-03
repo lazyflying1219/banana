@@ -1,0 +1,20 @@
+[
+  {
+    "name": "3D手办风格",
+    "image": "https://raw.githubusercontent.com/PicoTrex/Awesome-Nano-Banana-images/main/assets/1716104115869.png",
+    "description": "将图片转换为专业的3D手办模型效果，包含包装盒和制作过程。",
+    "style_prompt": "3D toy figure style, professional 3D model effect, includes packaging box and production process, high detail, studio lighting"
+  },
+  {
+    "name": "动漫插画",
+    "image": "https://raw.githubusercontent.com/PicoTrex/Awesome-Nano-Banana-images/main/assets/1716104279589.png",
+    "description": "色彩鲜艳、线条明快的日系动漫插画风格，适合角色和场景。",
+    "style_prompt": "anime illustration style, vibrant colors, clean lines, Japanese anime aesthetic, pixiv top-ranking"
+  },
+  {
+    "name": "像素艺术",
+    "image": "https://raw.githubusercontent.com/PicoTrex/Awesome-Nano-Banana-images/main/assets/1716104333069.png",
+    "description": "复古的像素游戏艺术风格，颗粒感强，色彩有限。",
+    "style_prompt": "pixel art style, 16-bit, vibrant color palette, detailed, retro gaming aesthetic, Aseprite"
+  }
+]
