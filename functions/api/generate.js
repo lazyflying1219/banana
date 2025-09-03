@@ -71,14 +71,16 @@ export async function onRequest(context) {
 
     // The successful cURL test indicates the response is in the 'choices' array.
     if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.length > 0) {
+      // FIX 1: Get the first element from the 'choices' array.
       const choice = responseData.choices;
-      if (choice.message && typeof choice.message.content === 'string') {
+      if (choice && choice.message && typeof choice.message.content === 'string') {
         const content = choice.message.content;
         
         // The most likely format is a data URI for a Base64 image, as you suspected.
         const dataUriMatch = content.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
-        if (dataUriMatch) {
-          imageUrl = dataUriMatch; // Use the full matched data URI string.
+        if (dataUriMatch && dataUriMatch.length > 0) {
+          // FIX 2: Use the matched string, which is the first element of the match array.
+          imageUrl = dataUriMatch;
         }
       }
     }
