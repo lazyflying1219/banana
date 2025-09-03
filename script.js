@@ -244,7 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!response.ok) throw new Error(`API 请求失败: ${response.statusText}`);
             const result = await response.json();
-            const imageUrl = result.data?.src || result.src || result.output_url || result.output_image;
+            // Correctly handle the response format { "src": "..." }
+            const imageUrl = result.src || result.data?.src || result.output_url || result.output_image;
             if (imageUrl) {
                 displayImage({ src: imageUrl, prompt: prompt, model: modelName });
             } else {
