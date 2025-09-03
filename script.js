@@ -197,29 +197,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 图片生成与展示 (无跳动优化) ---
     function displayImage(imageData) {
-        let currentImg = imageDisplay.querySelector('img');
-        if (!currentImg) {
-            currentImg = document.createElement('img');
-            imageDisplay.appendChild(currentImg);
+        imageDisplay.innerHTML = ''; // Clear previous content
+        let currentImg = document.createElement('img');
+        
+        currentImg.onerror = function() {
+            console.error('生成结果图片加载失败:', this.src);
+            imageDisplay.innerHTML = '<p>图片加载失败，请重试</p>';
+            imageActions.classList.add('hidden');
+        };
+        currentImg.src = imageData.src;
+        currentImg.alt = imageData.prompt || 'Generated Image';
+        
+        currentImg.style.opacity = 0;
+        imageDisplay.appendChild(currentImg);
+        
+        currentImg.onload = () => {
+            setTimeout(() => { currentImg.style.opacity = 1; }, 50); 
+        };
+        if (currentImg.complete) {
+            setTimeout(() => { currentImg.style.opacity = 1; }, 50);
         }
-        
-        currentImg.classList.remove('active');
-        
-        setTimeout(() => {
-            currentImg.onerror = function() {
-                console.error('生成结果图片加载失败:', this.src);
-                imageDisplay.innerHTML = '<p>图片加载失败，请重试</p>';
-                imageActions.classList.add('hidden');
-            };
-            currentImg.src = imageData.src;
-            currentImg.alt = imageData.prompt || 'Generated Image';
-            currentImg.onload = () => {
-                setTimeout(() => currentImg.classList.add('active'), 50); 
-            };
-            if (currentImg.complete) {
-                setTimeout(() => currentImg.classList.add('active'), 50);
-            }
-        }, 300);
 
         imageActions.classList.remove('hidden');
         currentGeneratedImage = { ...imageData, id: imageData.id || Date.now() };
@@ -235,6 +232,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         generateBtn.textContent = '生成中...';
         generateBtn.disabled = true;
+        imageDisplay.innerHTML = '<p>正在为您生成图片...</p>';
+        imageActions.classList.add('hidden');
+
 
         try {
             const response = await fetch(apiUrl, {
@@ -242,20 +242,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, model: modelName, images }),
             });
-            if (!response.ok) throw new Error(`API 请求失败: ${response.statusText}`);
-            const result = await response.json();
-            // Correctly handle the response format { "src": "..." }
-            const imageUrl = result.src || result.data?.src || result.output_url || result.output_image;
-            if (imageUrl) {
-                displayImage({ src: imageUrl, prompt: prompt, model: modelName });
-            } else {
-                throw new Error('API 返回数据中未找到图片URL');
+
+            if (!response.ok) {
+                // If response is not OK, read the body as JSON and throw it as an error
+                const errorData = await response.json();
+                throw errorData; 
             }
+
+            const result = await response.json();
+            
+            if (result.src) {
+                displayImage({ src: result.src, prompt: prompt, model: modelName });
+            } else {
+                throw new Error('API 返回数据中未找到 "src" 字段');
+            }
+
         } catch (error) {
             console.error('API 生成失败:', error);
-            // FINAL, ROBUST error handling to display ANY error on the page
-            imageDisplay.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; text-align: left; font-size: 12px; padding: 10px;">${String(error)}</pre>`;
-            imageActions.classList.add('hidden');
+            // The robust error handler
+            const errorMessage = JSON.stringify(error, null, 2);
+            imageDisplay.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; text-align: left; font-size: 12px; padding: 10px;">${errorMessage}</pre>`;
+        
         } finally {
             generateBtn.textContent = '生成';
             generateBtn.disabled = false;
@@ -389,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let thumbsContainer = fileUploadArea.querySelector('.upload-thumbs');
         if (!thumbsContainer) {
             thumbsContainer = document.createElement('div');
-thumbsContainer.className = 'upload-thumbs';
+            thumbsContainer.className = 'upload-thumbs';
             fileUploadArea.appendChild(thumbsContainer);
         }
         thumbsContainer.innerHTML = '';
