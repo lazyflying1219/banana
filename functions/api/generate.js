@@ -77,7 +77,11 @@ export async function onRequest(context) {
 
     if (!imageUrl) {
       console.error('FINAL ATTEMPT FAILED: Could not extract Base64 data URI from the chat response:', JSON.stringify(responseData, null, 2));
-      return new Response(JSON.stringify({ error: 'The chat API response did not contain a recognizable image data string.' }), {
+      // Return the full, raw response data to the frontend for debugging.
+      return new Response(JSON.stringify({
+        error: 'The chat API response did not contain a recognizable image data string.',
+        rawResponse: responseData
+      }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
