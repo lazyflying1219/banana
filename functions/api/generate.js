@@ -69,18 +69,22 @@ export async function onRequest(context) {
 
     // Try to find URL in common response formats
     // Case 1: DALL-E-like response { data: [{ url: ... }] }
-    if (responseData.data && Array.isArray(responseData.data) && responseData.data && responseData.data.url) {
+    if (responseData.data && Array.isArray(responseData.data) && responseData.data.url) {
         imageUrl = responseData.data.url;
     }
-    // Case 2: Chat-like response { choices: [{ message: { content: "...url..." } }] }
-    else if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices && responseData.choices.message && responseData.choices.message.content) {
+    // Case 2: DALL-E Base64 response { data: [{ b64_json: ... }] }
+    else if (responseData.data && Array.isArray(responseData.data) && responseData.data.b64_json) {
+        imageUrl = `data:image/png;base64,${responseData.data[0].b64_json}`;
+    }
+    // Case 3: Chat-like response { choices: [{ message: { content: "...url..." } }] }
+    else if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.message && responseData.choices.message.content) {
         const content = responseData.choices.message.content;
         const urlMatch = content.match(/https?:\/\/[^\s"']+/);
         if (urlMatch) {
             imageUrl = urlMatch;
         }
     }
-    // Case 3: Other common direct formats
+    // Case 4: Other common direct formats
     else if (responseData.output_url) {
         imageUrl = responseData.output_url;
     } else if (responseData.src) {
