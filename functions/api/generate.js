@@ -62,40 +62,35 @@ export async function onRequest(context) {
 
     const responseData = await apiResponse.json();
 
-    // --- Data Transformation ---
-    // The upstream API might return data in a different format.
-    // We need to find the image URL and adapt it to what the frontend expects ({ src: '...' }).
-    let imageUrl;
+    // --- Data Transformation for Chat API returning Base64 ---
+    let imageUrl = null;
 
-    // Try to find URL in common response formats
-    // Case 1: DALL-E-like response { data: [{ url: ... }] }
-    if (responseData.data && Array.isArray(responseData.data) && responseData.data.url) {
-        imageUrl = responseData.data.url;
-    }
-    // Case 2: DALL-E Base64 response { data: [{ b64_json: ... }] }
-    else if (responseData.data && Array.isArray(responseData.data) && responseData.data.b64_json) {
-        imageUrl = `data:image/png;base64,${responseData.data[0].b64_json}`;
-    }
-    // Case 3: Chat-like response { choices: [{ message: { content: "...url..." } }] }
-    else if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.message && responseData.choices.message.content) {
-        const content = responseData.choices.message.content;
-        const urlMatch = content.match(/https?:\/\/[^\s"']+/);
-        if (urlMatch) {
-            imageUrl = urlMatch;
+    // Check if the response is from a Chat-like API and contains Base64 data URI
+    if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.length > 0) {
+      const messageContent = responseData.choices.message?.content;
+      if (messageContent) {
+        // Use a regex to find a data URI (e.g., data:image/png;base64,...)
+        const dataUriMatch = messageContent.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
+        if (dataUriMatch) {
+          imageUrl = dataUriMatch;
         }
+      }
     }
-    // Case 4: Other common direct formats
-    else if (responseData.output_url) {
-        imageUrl = responseData.output_url;
-    } else if (responseData.src) {
-        imageUrl = responseData.src;
-    } else if (typeof responseData.data === 'string' && responseData.data.startsWith('http')) {
-        imageUrl = responseData.data;
+    
+    // Fallback for other URL-based formats if the primary check fails
+    if (!imageUrl) {
+        if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0 && responseData.data.url) {
+            imageUrl = responseData.data.url;
+        } else if (responseData.output_url) {
+            imageUrl = responseData.output_url;
+        } else if (responseData.src) {
+            imageUrl = responseData.src;
+        }
     }
 
     if (!imageUrl) {
-      console.error('Could not extract image URL from upstream API response:', JSON.stringify(responseData, null, 2));
-      return new Response(JSON.stringify({ error: 'Could not find a valid image URL in the API response.' }), {
+      console.error('Final Attempt Failed: Could not extract image URL or Base64 from API response:', JSON.stringify(responseData, null, 2));
+      return new Response(JSON.stringify({ error: 'The API response format is not recognized or does not contain an image.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
