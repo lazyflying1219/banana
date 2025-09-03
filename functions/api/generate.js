@@ -62,8 +62,48 @@ export async function onRequest(context) {
 
     const responseData = await apiResponse.json();
 
-    // 将从 API 收到的数据原样返回给前端
-    return new Response(JSON.stringify(responseData), {
+    // --- Data Transformation ---
+    // The upstream API might return data in a different format.
+    // We need to find the image URL and adapt it to what the frontend expects ({ src: '...' }).
+    let imageUrl;
+
+    // Try to find URL in common response formats
+    // Case 1: DALL-E-like response { data: [{ url: ... }] }
+    if (responseData.data && Array.isArray(responseData.data) && responseData.data && responseData.data.url) {
+        imageUrl = responseData.data.url;
+    }
+    // Case 2: Chat-like response { choices: [{ message: { content: "...url..." } }] }
+    else if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices && responseData.choices.message && responseData.choices.message.content) {
+        const content = responseData.choices.message.content;
+        const urlMatch = content.match(/https?:\/\/[^\s"']+/);
+        if (urlMatch) {
+            imageUrl = urlMatch;
+        }
+    }
+    // Case 3: Other common direct formats
+    else if (responseData.output_url) {
+        imageUrl = responseData.output_url;
+    } else if (responseData.src) {
+        imageUrl = responseData.src;
+    } else if (typeof responseData.data === 'string' && responseData.data.startsWith('http')) {
+        imageUrl = responseData.data;
+    }
+
+    if (!imageUrl) {
+      console.error('Could not extract image URL from upstream API response:', JSON.stringify(responseData, null, 2));
+      return new Response(JSON.stringify({ error: 'Could not find a valid image URL in the API response.' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // Prepare the response for the frontend in the expected format.
+    const frontendResponse = {
+      src: imageUrl
+    };
+
+    // 将转换后的数据返回给前端
+    return new Response(JSON.stringify(frontendResponse), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
