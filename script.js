@@ -253,7 +253,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('API 生成失败:', error);
-            alert('生成失败，请检查API设置或网络连接。');
+            // Enhanced error handling to display raw response on the page
+            try {
+                const errorResponse = JSON.parse(error.message.substring(error.message.indexOf('{')));
+                if (errorResponse && errorResponse.rawResponse) {
+                    const debugInfo = JSON.stringify(errorResponse.rawResponse, null, 2);
+                    imageDisplay.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; text-align: left; font-size: 12px; padding: 10px;">${debugInfo}</pre>`;
+                    imageActions.classList.add('hidden');
+                } else {
+                     alert('生成失败，请检查API设置或网络连接。');
+                }
+            } catch (e) {
+                 alert('生成失败，且无法解析错误详情。');
+            }
         } finally {
             generateBtn.textContent = '生成';
             generateBtn.disabled = false;
