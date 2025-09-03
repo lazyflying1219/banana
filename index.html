@@ -3,62 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 图片生成器</title>
+    <title>Nano Banana - AI Image Studio</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <!-- 左侧灵感区 -->
-        <aside class="sidebar">
-            <h2>灵感画廊</h2>
-            <input type="search" id="search-prompts" placeholder="搜索提示词...">
-            <div class="inspiration-list" id="inspiration-list">
-                <!-- 灵感案例将由JS动态加载 -->
+    <div class="app-container">
+        <!-- 顶部 -->
+        <header class="app-header">
+            <div class="logo">
+                <img src="https://nb.snaily.top/logo.svg" alt="logo">
+                <h1>Nano Banana</h1>
             </div>
-        </aside>
+            <div class="header-actions">
+                <button id="settings-btn" class="icon-btn" title="API 设置"><i class="fa-solid fa-gear"></i></button>
+                <button class="icon-btn" title="切换主题"><i class="fa-solid fa-sun"></i></button>
+            </div>
+        </header>
 
-        <!-- 右侧主操作区 -->
+        <!-- 提示横幅 -->
+        <div id="api-alert-banner" class="alert-banner hidden">
+            <i class="fa-solid fa-triangle-exclamation"></i> 请先在右上角设置中配置您的 API 密钥
+        </div>
+
+        <!-- 功能Tabs -->
+        <nav class="app-tabs">
+            <button class="tab-item active"><i class="fa-solid fa-image"></i> 图片生成</button>
+            <button class="tab-item disabled" title="功能待开发"><i class="fa-solid fa-bolt"></i> 快速操作</button>
+            <button class="tab-item disabled" title="功能待开发"><i class="fa-solid fa-heart"></i> 收藏Prompt</button>
+            <button class="tab-item disabled" title="功能待开发"><i class="fa-solid fa-clock-rotate-left"></i> 生成历史</button>
+        </nav>
+
+        <!-- 主内容区 -->
         <main class="main-content">
-            <section class="settings-panel">
-                <h3>API 配置</h3>
-                <div class="settings-grid">
-                    <input type="text" id="api-url" placeholder="API URL (例如 https://api.openai.com/v1)">
-                    <input type="password" id="api-key" placeholder="API Key (保存在浏览器本地)">
-                    <input type="text" id="api-model" placeholder="模型名称 (例如 dall-e-3)">
+            <!-- Column 1: 参考图片 -->
+            <div class="card card-yellow">
+                <div class="card-header">
+                    <h4><i class="fa-solid fa-paperclip"></i> 参考图片</h4>
                 </div>
-                <button id="save-settings-btn">保存配置</button>
-            </section>
-
-            <div class="tabs">
-                <button class="tab-link active" data-tab="txt2img">文生图</button>
-                <button class="tab-link" data-tab="img2img">图生图 (暂未实现)</button>
-            </div>
-
-            <div id="txt2img" class="tab-content active">
-                <textarea id="prompt-input" rows="5" placeholder="在这里输入你的图片描述提示词..."></textarea>
-                <button id="generate-btn">生成图片</button>
-            </div>
-
-            <div id="img2img" class="tab-content">
-                <p style="text-align: center; margin: 20px 0;">图生图功能需要API支持，并且通常使用不同的接口格式。此为UI占位符。</p>
-                <div class="img2img-controls">
-                    <div class="upload-box">
-                        <input type="file" id="img-input" accept="image/*">
-                        <label for="img-input">点击或拖拽上传初始图片</label>
+                <div id="upload-area" class="upload-area">
+                    <div id="upload-placeholder">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <p>拖拽图片到此处, 或点击选择文件</p>
+                        <span>支持 JPG, PNG, GIF, 最大 10MB</span>
+                        <div class="paste-tip">
+                            <i class="fa-regular fa-keyboard"></i> 也可以使用 Ctrl+V 直接粘贴图片
+                        </div>
+                        <button id="select-file-btn" class="action-btn">选择图片</button>
                     </div>
-                    <textarea id="img-prompt-input" rows="3" placeholder="输入修改图片的提示词..."></textarea>
+                    <div id="image-preview-container" class="hidden"></div>
+                    <input type="file" id="file-input" accept="image/*" class="hidden">
                 </div>
-                 <button id="generate-img2img-btn" disabled>生成图片</button>
             </div>
 
-            <div class="result-panel">
-                <h3>生成结果</h3>
-                <div id="image-result" class="image-result">
-                    <div class="placeholder">等待生成...</div>
-                    <div id="loader" class="loader" style="display: none;"></div>
+            <!-- Column 2: 生成设置 -->
+            <div class="card card-green">
+                <div class="card-header">
+                    <h4><i class="fa-solid fa-sliders"></i> 生成设置</h4>
+                </div>
+                <div class="settings-group">
+                    <label>自定义提示词</label>
+                    <textarea id="prompt-input" rows="5" placeholder="Add luxury golden elements, ornate decorations..."></textarea>
+                </div>
+                <div class="settings-group">
+                    <label>选择预设模板</label>
+                    <div class="carousel">
+                        <button id="carousel-prev" class="carousel-nav"><i class="fa-solid fa-chevron-left"></i></button>
+                        <div class="carousel-track-container">
+                            <div id="carousel-track" class="carousel-track">
+                                <!-- 模板将由 JS 动态加载 -->
+                            </div>
+                        </div>
+                        <button id="carousel-next" class="carousel-nav"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                    <div id="template-info" class="template-info hidden">
+                        <h5 id="template-name"></h5>
+                        <p id="template-description"></p>
+                    </div>
+                    <button id="select-template-btn" class="action-btn hidden">选择此模板</button>
+                </div>
+                 <div class="settings-group">
+                    <label>生成数量</label>
+                    <div class="amount-selector">
+                        <span>1张</span>
+                        <input type="range" id="amount-slider" min="1" max="4" value="1" step="1">
+                        <span>4张</span>
+                    </div>
+                </div>
+                <button id="generate-btn" class="generate-btn">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 生成 <span id="generate-amount-text">1</span> 张图片
+                </button>
+            </div>
+
+            <!-- Column 3: 生成结果 -->
+            <div class="card card-blue">
+                <div class="card-header">
+                    <h4><i class="fa-solid fa-circle-check"></i> 生成结果</h4>
+                </div>
+                <div id="result-area" class="result-area">
+                    <div class="placeholder">
+                        <i class="fa-regular fa-image"></i>
+                        <p>生成的图片将在这里显示</p>
+                        <span>暂无AI奇迹, 期待您的尝试</span>
+                    </div>
+                    <!-- 图片生成后会插入这里 -->
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- API 设置模态框 -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>API 配置</h2>
+                <button id="close-modal-btn" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">你的 API 密钥将保存在浏览器本地，不会上传到任何服务器。</p>
+                <div class="form-group"><label for="api-url">API URL</label><input type="text" id="api-url" placeholder="例如: https://api.openai.com/v1"></div>
+                <div class="form-group"><label for="api-key">API Key</label><input type="password" id="api-key" placeholder="sk-..."></div>
+                <div class="form-group"><label for="api-model">聊天模型</label><input type="text" id="api-model" placeholder="必须是能生成图片的聊天模型, 如 gpt-4o"></div>
+                <button id="save-settings-btn">保存配置</button>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>
