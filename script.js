@@ -1,194 +1,250 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM Element Selectors ---
+    // DOM Elements
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
     const apiUrlInput = document.getElementById('api-url');
     const apiKeyInput = document.getElementById('api-key');
     const apiModelInput = document.getElementById('api-model');
-    const saveSettingsBtn = document.getElementById('save-settings-btn');
-    const inspirationList = document.getElementById('inspiration-list');
-    const searchInput = document.getElementById('search-prompts');
-    const promptInput = document.getElementById('prompt-input');
+    const apiAlertBanner = document.getElementById('api-alert-banner');
     const generateBtn = document.getElementById('generate-btn');
-    const imageResultContainer = document.getElementById('image-result');
-    const loader = document.getElementById('loader');
-    const tabs = document.querySelectorAll('.tab-link');
-    const tabContents = document.querySelectorAll('.tab-content');
+    const promptInput = document.getElementById('prompt-input');
+    const resultArea = document.getElementById('result-area');
+    const initialResultPlaceholder = resultArea.innerHTML;
 
-    let allPrompts = [];
+    // Image Upload Elements
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('file-input');
+    const selectFileBtn = document.getElementById('select-file-btn');
+    const imagePreviewContainer = document.getElementById('image-preview-container');
+    let referenceImageBase64 = null;
 
-    // --- Functions ---
+    // Template Carousel Elements
+    const carouselTrack = document.getElementById('carousel-track');
+    const carouselPrev = document.getElementById('carousel-prev');
+    const carouselNext = document.getElementById('carousel-next');
+    const templateInfo = document.getElementById('template-info');
+    const templateName = document.getElementById('template-name');
+    const templateDescription = document.getElementById('template-description');
+    const selectTemplateBtn = document.getElementById('select-template-btn');
+    let templates = [];
+    let selectedTemplate = null;
+    let carouselIndex = 0;
+    
+    // Amount Slider
+    const amountSlider = document.getElementById('amount-slider');
+    const generateAmountText = document.getElementById('generate-amount-text');
 
-    // 1. Load settings (无变化)
+    // --- Modal & Settings Logic ---
+    const openModal = () => settingsModal.classList.remove('hidden');
+    const closeModal = () => settingsModal.classList.add('hidden');
+    settingsBtn.addEventListener('click', openModal);
+    closeModalBtn.addEventListener('click', closeModal);
+    settingsModal.addEventListener('click', (e) => e.target === settingsModal && closeModal());
+
     function loadSettings() {
         apiUrlInput.value = localStorage.getItem('apiUrl') || '';
         apiKeyInput.value = localStorage.getItem('apiKey') || '';
-        apiModelInput.value = localStorage.getItem('apiModel') || '';
+        apiModelInput.value = localStorage.getItem('apiModel') || 'gpt-4o';
+        checkApiConfig();
     }
 
-    // 2. Save settings (无变化)
     function saveSettings() {
         localStorage.setItem('apiUrl', apiUrlInput.value);
         localStorage.setItem('apiKey', apiKeyInput.value);
         localStorage.setItem('apiModel', apiModelInput.value);
+        checkApiConfig();
+        closeModal();
+    }
+    saveSettingsBtn.addEventListener('click', saveSettings);
+
+    function checkApiConfig() {
+        const key = apiKeyInput.value.trim();
+        apiAlertBanner.classList.toggle('hidden', !!key);
+    }
+
+    // --- Image Upload Logic ---
+    selectFileBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, () => uploadArea.classList.add('dragover'), false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, () => uploadArea.classList.remove('dragover'), false);
+    });
+    uploadArea.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files), false);
+    
+    document.addEventListener('paste', (e) => {
+        handleFiles(e.clipboardData.files);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    function handleFiles(files) {
+        if (files.length === 0) return;
+        const file = files[0];
+        if (!file.type.startsWith('image/')) return;
         
-        saveSettingsBtn.textContent = '已保存!';
-        saveSettingsBtn.style.backgroundColor = '#45a049';
-        setTimeout(() => {
-            saveSettingsBtn.textContent = '保存配置';
-            saveSettingsBtn.style.backgroundColor = 'var(--success-color)';
-        }, 2000);
-    }
-
-    // 3. Load inspiration prompts (无变化)
-    async function loadInspirationPrompts() {
-        try {
-            const response = await fetch('./prompts.json');
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            allPrompts = await response.json();
-            displayPrompts(allPrompts);
-        } catch (error) {
-            console.error("Could not load inspiration prompts:", error);
-            inspirationList.innerHTML = `<p style="color: var(--text-muted);">无法加载灵感案例 (prompts.json)。</p>`;
-        }
-    }
-
-    // 4. Display prompts (无变化)
-    function displayPrompts(prompts) {
-        inspirationList.innerHTML = '';
-        if (prompts.length === 0) {
-            inspirationList.innerHTML = `<p style="color: var(--text-muted);">没有找到匹配的案例。</p>`;
-            return;
-        }
-        prompts.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'inspiration-item';
-            div.innerHTML = `<img src="${item.image_url}" alt="Inspiration image" loading="lazy"><p>${item.prompt}</p>`;
-            div.addEventListener('click', () => {
-                promptInput.value = item.prompt;
-                promptInput.focus();
-            });
-            inspirationList.appendChild(div);
-        });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            referenceImageBase64 = reader.result;
+            imagePreviewContainer.innerHTML = `<img src="${referenceImageBase64}" alt="Preview"><button id="remove-image-btn"><i class="fa-solid fa-times"></i></button>`;
+            imagePreviewContainer.classList.remove('hidden');
+            document.getElementById('upload-placeholder').classList.add('hidden');
+            document.getElementById('remove-image-btn').addEventListener('click', removeImage);
+        };
+        reader.readAsDataURL(file);
     }
     
-    // 5. Filter prompts (无变化)
-    function filterPrompts() {
-        const searchTerm = searchInput.value.toLowerCase();
-        const filteredPrompts = allPrompts.filter(item => item.prompt.toLowerCase().includes(searchTerm));
-        displayPrompts(filteredPrompts);
+    function removeImage() {
+        referenceImageBase64 = null;
+        imagePreviewContainer.innerHTML = '';
+        imagePreviewContainer.classList.add('hidden');
+        document.getElementById('upload-placeholder').classList.remove('hidden');
+        fileInput.value = '';
     }
 
-    // 6. Handle tab switching (无变化)
-    function handleTabSwitch(e) {
-        tabs.forEach(tab => tab.classList.remove('active'));
-        tabContents.forEach(content => content.classList.remove('active'));
-        const clickedTab = e.currentTarget;
-        clickedTab.classList.add('active');
-        document.getElementById(clickedTab.dataset.tab).classList.add('active');
+    // --- Template Carousel Logic ---
+    async function loadTemplates() {
+        try {
+            const response = await fetch('./templates.json');
+            templates = await response.json();
+            renderCarousel();
+        } catch (error) {
+            console.error("Failed to load templates:", error);
+        }
     }
 
-    // ★★★★★ 7. Generate Image via CHAT INTERFACE ONLY (Definitive Version) ★★★★★
+    function renderCarousel() {
+        carouselTrack.innerHTML = '';
+        templates.forEach((template, index) => {
+            const card = document.createElement('div');
+            card.className = 'template-card';
+            card.dataset.index = index;
+            card.innerHTML = `<img src="${template.image}" alt="${template.name}">`;
+            card.addEventListener('click', () => selectTemplate(index));
+            carouselTrack.appendChild(card);
+        });
+    }
+
+    function selectTemplate(index) {
+        selectedTemplate = templates[index];
+        document.querySelectorAll('.template-card').forEach((card, i) => {
+            card.classList.toggle('selected', i === index);
+        });
+        templateName.textContent = selectedTemplate.name;
+        templateDescription.textContent = selectedTemplate.description;
+        templateInfo.classList.remove('hidden');
+        selectTemplateBtn.classList.remove('hidden');
+    }
+    
+    selectTemplateBtn.addEventListener('click', () => {
+        if (!selectedTemplate) return;
+        promptInput.value += ` ${selectedTemplate.style_prompt}`;
+    });
+
+    function moveCarousel(direction) {
+        const cardWidth = 110; // 100px width + 10px gap
+        const trackWidth = carouselTrack.scrollWidth;
+        const containerWidth = carouselTrack.parentElement.offsetWidth;
+        
+        if (direction === 'next' && carouselIndex < templates.length - Math.floor(containerWidth / cardWidth)) {
+            carouselIndex++;
+        } else if (direction === 'prev' && carouselIndex > 0) {
+            carouselIndex--;
+        }
+        carouselTrack.style.transform = `translateX(-${carouselIndex * cardWidth}px)`;
+    }
+    carouselNext.addEventListener('click', () => moveCarousel('next'));
+    carouselPrev.addEventListener('click', () => moveCarousel('prev'));
+
+    // --- Amount Slider ---
+    amountSlider.addEventListener('input', (e) => {
+        generateAmountText.textContent = e.target.value;
+    });
+
+    // --- Generation Logic ---
     async function generateImage() {
-        const apiUrl = apiUrlInput.value.trim();
-        const apiKey = apiKeyInput.value.trim();
-        const model = apiModelInput.value.trim();
-        const userPrompt = promptInput.value.trim();
-
-        if (!apiUrl || !apiKey || !model) {
-            alert('请先完成并保存API配置！请确保模型名称是聊天模型 (如 gpt-4o)，而不是图片模型！');
-            return;
-        }
-        if (!userPrompt) {
-            alert('请输入提示词！');
+        const key = apiKeyInput.value.trim();
+        if (!key) {
+            alert('请先在右上角设置中配置您的 API 密钥');
+            openModal();
             return;
         }
 
-        loader.style.display = 'block';
-        imageResultContainer.innerHTML = '';
-        imageResultContainer.appendChild(loader);
+        const prompt = promptInput.value.trim();
+        if (!prompt && !referenceImageBase64) {
+            alert('请输入提示词或上传参考图片！');
+            return;
+        }
+
         generateBtn.disabled = true;
-        generateBtn.textContent = '生成中...';
+        generateBtn.classList.add('loading');
+        generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 生成中...';
+        
+        resultArea.innerHTML = `<div class="result-image-wrapper"><div class="loader"></div></div>`;
 
         try {
-            // 始终使用聊天接口 /chat/completions
-            const response = await fetch(`${apiUrl}/chat/completions`, {
+            const content = [];
+            // Add text prompt
+            if (prompt) {
+                content.push({ type: "text", text: prompt });
+            }
+            // Add reference image
+            if (referenceImageBase64) {
+                content.push({ type: "image_url", image_url: { url: referenceImageBase64 } });
+            }
+
+            const response = await fetch(`${apiUrlInput.value.trim()}/chat/completions`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
                 body: JSON.stringify({
-                    model: model,
-                    messages: [
-                        {
-                            "role": "user",
-                            "content": `请严格根据以下描述生成一张图片，不要添加任何额外评论: "${userPrompt}"`
-                        }
-                    ],
-                    max_tokens: 1500 // 留足空间给可能返回的Base64数据
+                    model: apiModelInput.value.trim(),
+                    messages: [{ role: "user", content: content }],
+                    max_tokens: 1500
                 })
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                const errorMessage = errorData.error?.message || JSON.stringify(errorData);
-                throw new Error(`API Error: ${errorMessage}`);
+                throw new Error(`API Error: ${errorData.error?.message || JSON.stringify(errorData)}`);
             }
 
             const data = await response.json();
             const message = data.choices[0]?.message;
             if (!message) throw new Error("API返回了无效的响应结构。");
 
-            const img = document.createElement('img');
-            img.alt = userPrompt;
-            let imageUrlFound = false;
-
-            // 智能解析逻辑：
-            // 现代模型(如GPT-4o)返回的是一个内容数组
+            let imageUrl = '';
             if (Array.isArray(message.content)) {
-                for (const contentPart of message.content) {
-                    if (contentPart.type === 'image_url') {
-                        // image_url.url 可能直接是 http://... 或 data:image/png;base64,...
-                        // <img> 标签都能识别
-                        img.src = contentPart.image_url.url;
-                        imageUrlFound = true;
-                        break; 
-                    }
-                }
-            } 
-            // 兼容老模型或非标准API，返回的是一个包含URL的字符串
-            else if (typeof message.content === 'string') {
-                const urlMatch = message.content.match(/\((https?:\/\/[^\s)]+)\)/) || message.content.match(/https?:\/\/[^\s]+/);
-                if (urlMatch) {
-                    img.src = urlMatch[0].replace('(', '').replace(')', '');
-                    imageUrlFound = true;
-                }
+                const imagePart = message.content.find(part => part.type === 'image_url');
+                if (imagePart) imageUrl = imagePart.image_url.url;
             }
 
-            if (!imageUrlFound) {
-                throw new Error("模型回复中未找到有效的图片URL或Base64数据。模型回复: " + (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)));
+            if (!imageUrl) {
+                throw new Error("模型回复中未找到图片数据。");
             }
             
-            loader.style.display = 'none';
-            imageResultContainer.innerHTML = '';
-            imageResultContainer.appendChild(img);
+            resultArea.innerHTML = `<div class="result-image-wrapper"><img src="${imageUrl}" alt="Generated Image"></div>`;
 
         } catch (error) {
-            console.error('Generation failed:', error);
-            loader.style.display = 'none';
-            imageResultContainer.innerHTML = `<p style="color: #ff6b6b;">生成失败: ${error.message}</p>`;
+            resultArea.innerHTML = `<div class="placeholder"><i class="fa-solid fa-circle-exclamation" style="color:red;"></i><p style="color:red;">生成失败</p><span>${error.message}</span></div>`;
         } finally {
             generateBtn.disabled = false;
-            generateBtn.textContent = '生成图片';
+            generateBtn.classList.remove('loading');
+            generateBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> 生成 <span id="generate-amount-text">${amountSlider.value}</span> 张图片`;
         }
     }
-
-    // --- Event Listeners ---
-    saveSettingsBtn.addEventListener('click', saveSettings);
-    searchInput.addEventListener('input', filterPrompts);
-    tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
     generateBtn.addEventListener('click', generateImage);
 
     // --- Initializations ---
     loadSettings();
-    loadInspirationPrompts();
+    loadTemplates();
 });
