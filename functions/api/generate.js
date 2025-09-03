@@ -34,12 +34,16 @@ export async function onRequest(context) {
       });
     }
 
-    // 构造转发到真实 API 的请求体
+    // Use the correct Chat Completions format for the request body, as confirmed by cURL test.
     const forwardBody = {
       model: body.model || 'vertexpic-gemini-2.5-flash-image-preview',
-      prompt: body.prompt,
-      images: body.images || [], // base64 图像数组
-      // 根据你的 API 文档，可能需要其他参数
+      messages: [{
+        role: "user",
+        content: body.prompt
+      }]
+      // Note: The 'images' array is not part of the standard chat completions message format.
+      // If image-to-image is needed, the API must support a different format for that.
+      // For now, we are focusing on text-to-image based on the successful cURL test.
     };
 
     const apiResponse = await fetch('https://veloe.onrender.com/v1/chat/completions', {
@@ -62,46 +66,37 @@ export async function onRequest(context) {
 
     const responseData = await apiResponse.json();
 
-    // --- Data Transformation for Chat API returning Base64 ---
+    // --- Final, Targeted Data Transformation based on cURL results ---
     let imageUrl = null;
 
-    // Check if the response is from a Chat-like API and contains Base64 data URI
+    // The successful cURL test indicates the response is in the 'choices' array.
     if (responseData.choices && Array.isArray(responseData.choices) && responseData.choices.length > 0) {
-      const messageContent = responseData.choices.message?.content;
-      if (messageContent) {
-        // Use a regex to find a data URI (e.g., data:image/png;base64,...)
-        const dataUriMatch = messageContent.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
+      const choice = responseData.choices;
+      if (choice.message && typeof choice.message.content === 'string') {
+        const content = choice.message.content;
+        
+        // The most likely format is a data URI for a Base64 image, as you suspected.
+        const dataUriMatch = content.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
         if (dataUriMatch) {
-          imageUrl = dataUriMatch;
+          imageUrl = dataUriMatch; // Use the full matched data URI string.
         }
       }
     }
-    
-    // Fallback for other URL-based formats if the primary check fails
-    if (!imageUrl) {
-        if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0 && responseData.data.url) {
-            imageUrl = responseData.data.url;
-        } else if (responseData.output_url) {
-            imageUrl = responseData.output_url;
-        } else if (responseData.src) {
-            imageUrl = responseData.src;
-        }
-    }
 
     if (!imageUrl) {
-      console.error('Final Attempt Failed: Could not extract image URL or Base64 from API response:', JSON.stringify(responseData, null, 2));
-      return new Response(JSON.stringify({ error: 'The API response format is not recognized or does not contain an image.' }), {
+      console.error('FINAL ATTEMPT FAILED: Could not extract Base64 data URI from the API response:', JSON.stringify(responseData, null, 2));
+      return new Response(JSON.stringify({ error: 'The API response format was not as expected or did not contain an image.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
 
-    // Prepare the response for the frontend in the expected format.
+    // Prepare the response for the frontend in the expected { "src": "..." } format.
     const frontendResponse = {
       src: imageUrl
     };
 
-    // 将转换后的数据返回给前端
+    // Return the correctly formatted data to the frontend.
     return new Response(JSON.stringify(frontendResponse), {
       status: 200,
       headers: {
