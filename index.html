@@ -12,10 +12,19 @@
              <h1>🎨 Nano Banana</h1>
         </div>
         <div class="header-icons">
-            <button id="history-btn" class="icon-button">📜</button>
-            <button id="favorites-btn" class="icon-button">❤️</button>
-            <button id="settings-btn" class="icon-button">⚙️</button>
-            <button id="theme-btn" class="icon-button">☀️</button>
+            <button id="history-btn" class="icon-button" title="历史记录">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><path d="M12 7v5l4 2"></path></svg>
+            </button>
+            <button id="favorites-btn" class="icon-button" title="我的收藏">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            </button>
+            <button id="settings-btn" class="icon-button" title="应用设置">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+            <button id="theme-btn" class="icon-button" title="切换主题">
+                <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
         </div>
     </header>
 
@@ -36,7 +45,6 @@
                 <h3>参考图</h3>
                 <div class="file-upload-area">
                     <p>点击或拖拽文件到此区域</p>
-                    <!-- 允许多选（multiple），以支持一次上传多张图片 -->
                     <input type="file" id="image-input" accept="image/*" multiple hidden>
                 </div>
                 <h3>提示词</h3>
@@ -56,20 +64,25 @@
             </div>
             
             <div class="carousel-container">
-                <button id="carousel-prev" class="carousel-arrow"><<</button>
+                <button id="carousel-prev" class="carousel-arrow"><</button>
                 <div id="thumbnail-slider">
                     <div id="thumbnail-track">
                         <!-- 缩略图将由 JS 动态填充 -->
                     </div>
                 </div>
-                <button id="carousel-next" class="carousel-arrow">>></button>
+                <button id="carousel-next" class="carousel-arrow">></button>
             </div>
 
             <div id="prompt-description-area">
                 <h4 id="gallery-prompt-title">选择一个模板</h4>
                 <p id="gallery-prompt-author">由 ... 制作</p>
             </div>
-            <button id="select-template-btn" class="primary-button">选择此模板</button>
+            <div class="template-actions">
+                <button id="select-template-btn" class="primary-button">选择此模板</button>
+                <button id="favorite-template-btn" class="icon-button" title="收藏模板">
+                    <svg class="heart-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                </button>
+            </div>
         </section>
 
         <!-- 第三栏：结果 -->
@@ -80,8 +93,12 @@
                     <p>生成的图片将在这里显示</p>
                 </div>
                 <div id="image-actions" class="hidden">
-                    <button id="favorite-result-btn" class="icon-button">🤍</button>
-                    <button id="download-result-btn" class="icon-button">⬇️</button>
+                    <button id="favorite-result-btn" class="icon-button" title="收藏结果">
+                        <svg class="heart-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                    </button>
+                    <button id="download-result-btn" class="icon-button" title="下载图片">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    </button>
                 </div>
             </div>
         </section>
@@ -123,14 +140,11 @@
             <div class="modal-body">
                 <p>配置您的API密钥和其他偏好设置</p>
                 <label for="api-url">API URL</label>
-                <input type="text" id="api-url" name="api-url" placeholder="https://openrouter.ai/api/v1">
-                <label for="api-key">API Key</label>
-                <input type="password" id="api-key" name="api-key" placeholder="sk-or-v1-...">
+                <input type="text" id="api-url" name="api-url" value="/api/generate" placeholder="/api/generate">
                 <label for="model-name">Model Name</label>
-                <input type="text" id="model-name" name="model-name" placeholder="gryphe/mythomix-l2-13b">
+                <input type="text" id="model-name" name="model-name" value="vertexpic-gemini-2.5-flash-image-preview" placeholder="vertexpic-gemini-2.5-flash-image-preview">
             </div>
             <div class="modal-footer">
-                <button id="reset-settings-btn" class="secondary-button">重置设置</button>
                 <button id="save-settings-btn" class="primary-button">保存设置</button>
             </div>
         </div>
