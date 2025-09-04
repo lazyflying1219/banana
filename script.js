@@ -39,8 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fileUploadArea = document.querySelector('.file-upload-area');
     const fileInput = document.getElementById('image-input');
-    
-    const apiUrlInput = document.getElementById('api-url');
     const modelNameInput = document.getElementById('model-name');
 
     // --- 单一预览器 ---
@@ -283,8 +281,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function generateImage() {
-        const apiUrl = apiUrlInput.value;
-        const modelName = modelNameInput.value;
+        // 直接使用后端API，不依赖前端设置
+        const apiUrl = '/api/generate';
+        const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
         const images = uploadedFiles.map(f => f.dataUrl);
 
@@ -825,12 +824,12 @@ document.addEventListener('DOMContentLoaded', () => {
             apiTestResult.innerHTML = '<div style="color: #007aff;">🔄 正在测试API连接...</div>';
             
             try {
-                const response = await fetch(apiUrlInput.value, {
+                const response = await fetch('/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         prompt: '测试图片生成：一只可爱的小猫', 
-                        model: modelNameInput.value 
+                        model: modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview'
                     }),
                 });
                 
@@ -863,8 +862,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveSettingsBtn = document.getElementById('save-settings-btn');
     if (saveSettingsBtn) {
         saveSettingsBtn.addEventListener('click', () => {
-            localStorage.setItem('apiUrl', apiUrlInput.value);
-            localStorage.setItem('modelName', modelNameInput.value);
+            // 只保存模型名称（虽然现在是只读的）
+            if (modelNameInput) {
+                localStorage.setItem('modelName', modelNameInput.value);
+            }
             closeModal(settingsModal);
             
             // 显示保存成功提示
@@ -884,10 +885,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tabImageToImage.addEventListener('click', () => switchTab(tabImageToImage, imageToImagePanel));
 
         // 从localStorage加载设置
-        const savedApiUrl = localStorage.getItem('apiUrl');
         const savedModelName = localStorage.getItem('modelName');
         
-        if (apiUrlInput) apiUrlInput.value = savedApiUrl || '/api/generate';
         if (modelNameInput) modelNameInput.value = savedModelName || 'vertexpic-gemini-2.5-flash-image-preview';
 
         // 初始化主题
