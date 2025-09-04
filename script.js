@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadHistoryDetailBtn = document.getElementById('download-history-detail-btn');
     const historyDetailImage = document.getElementById('history-detail-image');
     const historyDetailPrompt = document.getElementById('history-detail-prompt');
+    const favoriteHistoryDetailBtn = document.getElementById('favorite-history-detail-btn');
 
     const fileUploadArea = document.querySelector('.file-upload-area');
     const fileInput = document.getElementById('image-input');
@@ -184,18 +185,23 @@ document.addEventListener('DOMContentLoaded', () => {
             thumbItem.className = 'thumbnail-item';
             thumbItem.dataset.id = example.id || example.title;
 
-            const img = document.createElement('img');
-            img.alt = example.title;
-            // 使用占位符，等待懒加载
-            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
-            img.dataset.src = getProxiedImageUrl(example.thumbnail);
-            img.onerror = function() {
-                // 仅在尝试加载真实图片时记录错误
-                if (this.src !== 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=') {
-                    console.warn(`缩略图加载失败: ${this.dataset.src}`);
-                }
-            };
-            thumbItem.appendChild(img);
+            // 智能判断缩略图是图片还是HTML图标
+            if (example.thumbnail.startsWith('http') || example.thumbnail.startsWith('data:image')) {
+                const img = document.createElement('img');
+                img.alt = example.title;
+                // 使用占位符，等待懒加载
+                img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
+                img.dataset.src = getProxiedImageUrl(example.thumbnail);
+                img.onerror = function() {
+                    if (this.src !== 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=') {
+                        console.warn(`缩略图加载失败: ${this.dataset.src}`);
+                    }
+                };
+                thumbItem.appendChild(img);
+            } else {
+                // 如果是HTML，直接渲染
+                thumbItem.innerHTML = example.thumbnail;
+            }
 
             // 点击事件
             thumbItem.addEventListener('click', () => openLightbox(index));
@@ -743,24 +749,38 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             // 点击图片查看
-            img.addEventListener('click', () => {
-                // 统一使用新的详情模态框，不再跳转到主界面
-                const fullSrc = type === 'history' ? item.src : (item.src || item.thumbnail);
+            thumbItem.addEventListener('click', () => {
+                const isHistory = type === 'history';
+                const sourceItem = isHistory ? item : example;
                 
+                const fullSrc = sourceItem.src || sourceItem.thumbnail;
+                const itemId = sourceItem.id || `gen_${sourceItem.timestamp}`;
+
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
-                historyDetailPrompt.textContent = item.prompt;
+                historyDetailPrompt.textContent = sourceItem.prompt;
+
+                // 更新收藏按钮状态
+                const favorites = getStorage('favorites');
+                const isFavorited = favorites.some(fav => fav.id === itemId);
+                favoriteHistoryDetailBtn.classList.toggle('favorited', isFavorited);
+
+                // 收藏按钮点击事件
+                favoriteHistoryDetailBtn.onclick = () => {
+                    toggleFavorite({ ...sourceItem, id: itemId }, 'result');
+                    // 更新按钮状态
+                    favoriteHistoryDetailBtn.classList.toggle('favorited');
+                };
                 
-                // 设置下载按钮功能
+                // 下载按钮点击事件
                 downloadHistoryDetailBtn.onclick = () => {
                     const link = document.createElement('a');
                     link.href = fullSrc;
-                    link.download = `nano-banana-${type}-${item.id || Date.now()}.png`;
+                    link.download = `nano-banana-${type}-${itemId}.png`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
                 };
 
-                // 不再关闭当前模态框，直接在上面打开详情
                 openModal(historyDetailModal);
             });
             
