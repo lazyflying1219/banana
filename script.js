@@ -41,8 +41,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('image-input');
     const modelNameInput = document.getElementById('model-name');
 
-    // --- 单一预览器 ---
-    const galleryPreviewer = document.createElement('div');
+    const lightboxModal = document.getElementById('lightbox-modal');
+    const lightboxImage = document.getElementById('lightbox-image');
+    const lightboxClose = document.getElementById('lightbox-close');
+    const lightboxPrev = document.getElementById('lightbox-prev');
+    const lightboxNext = document.getElementById('lightbox-next');
+ 
+     // --- 单一预览器 ---
+     const galleryPreviewer = document.createElement('div');
     galleryPreviewer.className = 'thumbnail-previewer';
     document.body.appendChild(galleryPreviewer);
     let previewInterval = null;
@@ -54,7 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentPage = 0;
     const itemsPerPage = 15;
     let currentGeneratedImage = null;
-    let uploadedFiles = []; // { file: File, dataUrl: string }
+    let uploadedFiles = []; // { file: File, dataUrl:string }
+    let currentLightboxIndex = 0;
+
+    // --- (REMOVED) Scroll event handler is no longer needed ---
 
     // --- 通用函数 ---
     const getStorage = (key) => JSON.parse(localStorage.getItem(key)) || [];
@@ -164,14 +173,11 @@ document.addEventListener('DOMContentLoaded', () => {
             thumbItem.appendChild(img);
 
             // 点击事件
-            const clickHandler = () => updateGalleryDisplay(index);
-            thumbItem.addEventListener('click', clickHandler);
-
-            // 预览器事件 - 仅在桌面端启用
-            if (window.matchMedia('(hover: hover)').matches) {
-                let mouseEnterHandler, mouseLeaveHandler;
-                
-                mouseEnterHandler = (e) => {
+            thumbItem.addEventListener('click', () => openLightbox(index));
+ 
+             // 预览器事件 - 仅在桌面端 (>1024px) 启用
+             if (window.matchMedia('(min-width: 1025px) and (hover: hover)').matches) {
+                thumbItem.addEventListener('mouseenter', (e) => {
                     cleanupPreviewInterval();
                     
                     const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
@@ -218,15 +224,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             }, 1500);
                         }
                     }
-                };
-
-                mouseLeaveHandler = () => {
+                });
+                thumbItem.addEventListener('mouseleave', () => {
                     cleanupGalleryPreviewer();
-                };
-
-                thumbItem.addEventListener('mouseenter', mouseEnterHandler);
-                thumbItem.addEventListener('mouseleave', mouseLeaveHandler);
-            }
+                });
+             }
 
             fragment.appendChild(thumbItem);
         });
@@ -251,9 +253,55 @@ document.addEventListener('DOMContentLoaded', () => {
         targetTextArea.focus();
     });
 
-    // --- 图片生成与展示 (无跳动优化) ---
-    function displayImage(imageData) {
-        imageDisplay.innerHTML = ''; // Clear previous content
+    // --- 灯箱 (Lightbox) 功能 ---
+    function updateLightboxImage(index) {
+        if (!currentExamples[index]) return;
+        const example = currentExamples[index];
+        const highResImage = (example.outputImages && example.outputImages) || example.thumbnail;
+        lightboxImage.src = getProxiedImageUrl(highResImage);
+        lightboxImage.alt = example.title;
+        currentLightboxIndex = index;
+
+        // 更新导航按钮状态
+        lightboxPrev.style.display = index > 0 ? 'flex' : 'none';
+        lightboxNext.style.display = index < currentExamples.length - 1 ? 'flex' : 'none';
+    }
+
+    function openLightbox(index) {
+        updateGalleryDisplay(index); // Keep the main UI updated as well
+        updateLightboxImage(index);
+        lightboxModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // 防止背景滚动
+    }
+
+    function closeLightbox() {
+        lightboxModal.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    function showNextImage() {
+        if (currentLightboxIndex < currentExamples.length - 1) {
+            updateLightboxImage(currentLightboxIndex + 1);
+        }
+    }
+
+    function showPrevImage() {
+        if (currentLightboxIndex > 0) {
+            updateLightboxImage(currentLightboxIndex - 1);
+        }
+    }
+
+    function handleKeydown(e) {
+        if (!lightboxModal.classList.contains('hidden')) {
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowRight') showNextImage();
+            if (e.key === 'ArrowLeft') showPrevImage();
+        }
+    }
+ 
+     // --- 图片生成与展示 (无跳动优化) ---
+     function displayImage(imageData) {
+         imageDisplay.innerHTML = ''; // Clear previous content
         let currentImg = document.createElement('img');
         
         currentImg.onerror = function() {
@@ -895,6 +943,22 @@ document.addEventListener('DOMContentLoaded', () => {
         applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
 
         switchTab(tabTextToImage, textToImagePanel);
+
+        // Adjust body padding to prevent content from being hidden by the fixed header
+        const header = document.querySelector('header');
+        if (header) {
+            const headerHeight = header.offsetHeight;
+            document.body.style.paddingTop = `${headerHeight + 25}px`; // Add extra space
+        }
+
+        // 灯箱事件监听
+        lightboxClose.addEventListener('click', closeLightbox);
+        lightboxModal.addEventListener('click', (e) => {
+            if (e.target === lightboxModal) closeLightbox();
+        });
+        lightboxPrev.addEventListener('click', showPrevImage);
+        lightboxNext.addEventListener('click', showNextImage);
+        document.addEventListener('keydown', handleKeydown);
     };
 
     // --- 导出功能 ---
