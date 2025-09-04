@@ -109,7 +109,7 @@ export async function onRequest(context) {
       timestamp: new Date().toISOString()
     };
 
-    // 尝试不同的API端点
+    // 使用正确的完整API端点
     let apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
     // 尝试两种方式：流式和非流式
@@ -118,20 +118,42 @@ export async function onRequest(context) {
 
     try {
       // 方式1: 非流式请求
-      apiResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(forwardBody),
-      });
+      console.log('发送API请求到:', apiUrl);
+      console.log('请求体:', JSON.stringify(forwardBody, null, 2));
+      
+      // 添加超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+      
+      try {
+        apiResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(forwardBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('API请求超时，请稍后重试');
+        }
+        throw fetchError;
+      }
+
+      console.log('API响应状态:', apiResponse.status);
 
       if (!apiResponse.ok) {
-        throw new Error(`HTTP ${apiResponse.status}`);
+        const errorText = await apiResponse.text();
+        console.error('API错误响应:', errorText);
+        throw new Error(`HTTP ${apiResponse.status}: ${errorText}`);
       }
 
       responseData = await apiResponse.json();
+      console.log('API响应数据长度:', JSON.stringify(responseData).length);
 
       // 检查是否有完整的图片数据
       const hasCompleteImage = JSON.stringify(responseData).includes('data:image') &&
@@ -165,7 +187,7 @@ export async function onRequest(context) {
 
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split('\n');
-              
+
               // 保留最后一行（可能不完整）
               buffer = lines.pop() || '';
 
@@ -186,7 +208,7 @@ export async function onRequest(context) {
                 }
               }
             }
-            
+
             // 处理剩余的buffer
             if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
               try {
@@ -203,7 +225,7 @@ export async function onRequest(context) {
             }
 
             console.log('Stream content length:', fullContent.length);
-            
+
             // 构造完整响应
             if (fullContent.length > 0) {
               responseData = {
@@ -351,12 +373,22 @@ export async function onRequest(context) {
     });
 
   } catch (err) {
+    console.error('Generate API Error:', err);
+    
     return new Response(JSON.stringify({
       error: '服务器内部错误',
       details: err.message,
-      stack: err.stack,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      apiUrl: 'https://veloe.onrender.com/v1/chat/completions',
+      hasApiKey: !!env.VELAO_API_KEY,
       requestBody: body,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      suggestions: [
+        '1. 检查VELAO_API_KEY环境变量是否设置',
+        '2. 验证API服务是否正常运行',
+        '3. 检查网络连接',
+        '4. 确认模型名称正确'
+      ]
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
