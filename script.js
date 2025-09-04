@@ -106,14 +106,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 图片代理函数 ---
     function getProxiedImageUrl(originalUrl) {
-        // 检查是否为GitHub raw URL或其他外部URL
-        if (originalUrl && (originalUrl.includes('raw.githubusercontent.com') || originalUrl.includes('github.com') || originalUrl.includes('githubusercontent.com'))) {
+        // 如果没有URL，直接返回
+        if (!originalUrl) return originalUrl;
+        
+        // 如果是data URL，直接返回
+        if (originalUrl.startsWith('data:')) return originalUrl;
+        
+        // 如果是相对路径，直接返回
+        if (originalUrl.startsWith('/') && !originalUrl.startsWith('//')) return originalUrl;
+        
+        // 对于所有外部HTTP/HTTPS URL，都使用代理
+        if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://') || originalUrl.startsWith('//')){
+            console.log('Using proxy for URL:', originalUrl);
             return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
         }
-        // 对于其他HTTP/HTTPS URL，也使用代理
-        if (originalUrl && (originalUrl.startsWith('http://') || originalUrl.startsWith('https://'))) {
-            return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
-        }
+        
         return originalUrl;
     }
 
@@ -448,7 +455,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function generateImage() {
-        // 直接使用后端API，不依赖前端设置
+        return await generateImageWithRetry();
+    }
+
+    async function generateImageWithRetry(retryCount = 0) {
+        const maxRetries = 3;
         const apiUrl = '/api/generate';
         const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
@@ -460,10 +471,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        generateBtn.textContent = '生成中...';
-        generateBtn.disabled = true;
-        imageDisplay.innerHTML = '<div class="loading-spinner"><p>正在为您生成图片...</p><div class="spinner"></div></div>';
-        imageActions.classList.add('hidden');
+        // 只在第一次尝试时设置UI状态
+        if (retryCount === 0) {
+            generateBtn.textContent = '生成中...';
+            generateBtn.disabled = true;
+            imageDisplay.innerHTML = '<div class="loading-spinner"><p>正在为您生成图片...</p><div class="spinner"></div></div>';
+            imageActions.classList.add('hidden');
+        } else {
+            // 重试时更新加载信息
+            const loadingText = imageDisplay.querySelector('.loading-spinner p');
+            if (loadingText) {
+                loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries})`;
+            }
+        }
 
         try {
             const response = await fetch(apiUrl, {
@@ -479,69 +499,128 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch {
                     errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
                 }
-                throw errorData; 
+                throw errorData;
             }
 
             const result = await response.json();
             
             if (result.src) {
+                // 成功生成，重置UI状态
+                generateBtn.textContent = '生成';
+                generateBtn.disabled = false;
                 displayImage({ src: result.src, prompt: prompt, model: modelName });
+                return;
             } else {
                 throw new Error('API 返回数据中未找到图片');
             }
 
         } catch (error) {
-            console.error('API 生成失败:', error);
+            console.error(`API 生成失败 (尝试 ${retryCount + 1}/${maxRetries + 1}):`, error);
             
-            // 详细的错误信息用于调试
-            let errorDetails = {
-                message: error.message || '未知错误',
-                stack: error.stack || '无堆栈信息',
-                name: error.name || '未知错误类型',
-                error: error.error || null,
-                details: error.details || null,
-                rawResponse: error.rawResponse || null,
-                responseText: error.responseText || null
-            };
-            
-            // 如果是网络错误，添加更多信息
-            if (error instanceof TypeError && error.message.includes('fetch')) {
-                errorDetails.networkError = true;
-                errorDetails.suggestion = '请检查网络连接和API地址';
+            // 检查是否应该重试
+            if (retryCount < maxRetries && shouldRetry(error)) {
+                console.log(`准备进行第 ${retryCount + 1} 次重试...`);
+                
+                // 智能延迟：递增延迟时间
+                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s, 最大5s
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // 递归重试
+                return await generateImageWithRetry(retryCount + 1);
             }
             
-            let displayMessage = error.error || error.message || '生成失败，请重试';
-            
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-message';
-            errorDiv.style.textAlign = 'left';
-            
-            const errorP = document.createElement('p');
-            errorP.textContent = `❌ ${displayMessage}`;
-            
-            // 添加详细调试信息
-            const debugInfo = document.createElement('details');
-            debugInfo.style.marginTop = '15px';
-            debugInfo.innerHTML = `
-                <summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px;">🔍 调试信息 (点击展开)</summary>
-                <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails, null, 2)}</pre>
-            `;
-            
-            const retryBtn = document.createElement('button');
-            retryBtn.className = 'retry-btn';
-            retryBtn.textContent = '重试';
-            retryBtn.addEventListener('click', generateImage);
-            
-            errorDiv.appendChild(errorP);
-            errorDiv.appendChild(debugInfo);
-            errorDiv.appendChild(retryBtn);
-            imageDisplay.innerHTML = '';
-            imageDisplay.appendChild(errorDiv);
-        
-        } finally {
-            generateBtn.textContent = '生成';
-            generateBtn.disabled = false;
+            // 所有重试都失败了，显示错误信息
+            handleGenerationError(error, retryCount);
         }
+    }
+
+    // 判断是否应该重试的函数
+    function shouldRetry(error) {
+        // 网络错误应该重试
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            return true;
+        }
+        
+        // 服务器错误 (5xx) 应该重试
+        if (error.error && typeof error.error === 'string') {
+            if (error.error.includes('HTTP 5') ||
+                error.error.includes('timeout') ||
+                error.error.includes('连接') ||
+                error.error.includes('服务器')) {
+                return true;
+            }
+        }
+        
+        // 临时性错误应该重试
+        const retryableErrors = [
+            'timeout',
+            'network',
+            'connection',
+            'temporary',
+            'rate limit',
+            'service unavailable',
+            'internal server error'
+        ];
+        
+        const errorMessage = (error.message || error.error || '').toLowerCase();
+        return retryableErrors.some(keyword => errorMessage.includes(keyword));
+    }
+
+    // 处理生成错误的函数
+    function handleGenerationError(error, finalRetryCount) {
+        generateBtn.textContent = '生成';
+        generateBtn.disabled = false;
+        
+        // 详细的错误信息用于调试
+        let errorDetails = {
+            message: error.message || '未知错误',
+            stack: error.stack || '无堆栈信息',
+            name: error.name || '未知错误类型',
+            error: error.error || null,
+            details: error.details || null,
+            rawResponse: error.rawResponse || null,
+            responseText: error.responseText || null,
+            totalRetries: finalRetryCount
+        };
+        
+        // 如果是网络错误，添加更多信息
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            errorDetails.networkError = true;
+            errorDetails.suggestion = '请检查网络连接和API地址';
+        }
+        
+        let displayMessage = error.error || error.message || '生成失败，请重试';
+        
+        // 如果进行了重试，在消息中体现
+        if (finalRetryCount > 0) {
+            displayMessage += ` (已自动重试 ${finalRetryCount} 次)`;
+        }
+        
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.style.textAlign = 'left';
+        
+        const errorP = document.createElement('p');
+        errorP.textContent = `❌ ${displayMessage}`;
+        
+        // 添加详细调试信息
+        const debugInfo = document.createElement('details');
+        debugInfo.style.marginTop = '15px';
+        debugInfo.innerHTML = `
+            <summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px;">🔍 调试信息 (点击展开)</summary>
+            <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails, null, 2)}</pre>
+        `;
+        
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'retry-btn';
+        retryBtn.textContent = '手动重试';
+        retryBtn.addEventListener('click', generateImage);
+        
+        errorDiv.appendChild(errorP);
+        errorDiv.appendChild(debugInfo);
+        errorDiv.appendChild(retryBtn);
+        imageDisplay.innerHTML = '';
+        imageDisplay.appendChild(errorDiv);
     }
     generateBtn.addEventListener('click', generateImage);
 
@@ -796,6 +875,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }, 300);
         }, 3000);
+    }
+
+    // 专门为历史详情模态框绑定按钮事件
+    function setupHistoryDetailButtons() {
+        // 绑定收藏按钮
+        const favoriteBtn = document.getElementById('favorite-history-detail-btn');
+        if (favoriteBtn) {
+            // 移除旧的事件监听器
+            favoriteBtn.replaceWith(favoriteBtn.cloneNode(true));
+            const newFavoriteBtn = document.getElementById('favorite-history-detail-btn');
+            
+            newFavoriteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('History detail favorite button clicked');
+                if (currentItemInDetailView) {
+                    console.log('Toggling favorite for history detail:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
+                }
+            });
+            
+            // 更新收藏图标
+            updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+        }
+
+        // 绑定发送到图生图按钮
+        const sendBtn = document.getElementById('send-history-to-img2img-btn');
+        if (sendBtn) {
+            // 移除旧的事件监听器
+            sendBtn.replaceWith(sendBtn.cloneNode(true));
+            const newSendBtn = document.getElementById('send-history-to-img2img-btn');
+            
+            newSendBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send history to img2img button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    // 关闭历史详情模态框
+                    closeModal(historyDetailModal);
+                }
+            });
+        }
+
+        // 绑定下载按钮
+        const downloadBtn = document.getElementById('download-history-detail-btn');
+        if (downloadBtn) {
+            downloadBtn.replaceWith(downloadBtn.cloneNode(true));
+            const newDownloadBtn = document.getElementById('download-history-detail-btn');
+            
+            newDownloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+        }
     }
 
     // --- 下载功能 ---
