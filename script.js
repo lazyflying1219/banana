@@ -314,9 +314,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         currentImg.style.opacity = 0;
         imageDisplay.appendChild(currentImg);
+
+        // 为生成的图片添加点击放大功能
+        currentImg.addEventListener('click', () => {
+            lightboxImage.src = currentImg.src;
+            lightboxImage.alt = currentImg.alt;
+            
+            // 单张图片时隐藏导航
+            lightboxPrev.style.display = 'none';
+            lightboxNext.style.display = 'none';
+            
+            lightboxModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        });
         
         currentImg.onload = () => {
-            setTimeout(() => { currentImg.style.opacity = 1; }, 50); 
+            setTimeout(() => { currentImg.style.opacity = 1; }, 50);
         };
         if (currentImg.complete) {
             setTimeout(() => { currentImg.style.opacity = 1; }, 50);
