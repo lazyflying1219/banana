@@ -109,7 +109,12 @@
         <div class="modal-content modal-lg">
             <div class="modal-header">
                 <h2>我的收藏</h2>
-                <button id="close-favorites-modal-btn" class="icon-button">&times;</button>
+                <div class="modal-header-actions">
+                    <button id="export-favorites-btn" class="icon-button" title="导出收藏">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    </button>
+                    <button id="close-favorites-modal-btn" class="icon-button">&times;</button>
+                </div>
             </div>
             <div id="favorites-grid" class="modal-body">
                 <!-- 收藏的图片将由 JS 动态填充 -->
@@ -122,7 +127,12 @@
         <div class="modal-content modal-lg">
             <div class="modal-header">
                 <h2>历史记录</h2>
-                <button id="close-history-modal-btn" class="icon-button">&times;</button>
+                <div class="modal-header-actions">
+                    <button id="export-history-btn" class="icon-button" title="导出历史">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    </button>
+                    <button id="close-history-modal-btn" class="icon-button">&times;</button>
+                </div>
             </div>
             <div id="history-grid" class="modal-body">
                 <!-- 历史记录将由 JS 动态填充 -->

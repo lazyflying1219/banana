@@ -365,12 +365,28 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn('无法收藏，因为项目没有有效ID:', item);
             return;
         }
+        
         const existingIndex = favorites.findIndex(fav => fav.id === itemId);
         if (existingIndex > -1) {
+            // 取消收藏
             favorites.splice(existingIndex, 1);
         } else {
-            favorites.unshift({ ...item, type, id: itemId });
+            // 添加收藏，包含时间戳
+            const favoriteItem = { 
+                ...item, 
+                type, 
+                id: itemId,
+                timestamp: Date.now(),
+                favoriteDate: new Date().toLocaleDateString()
+            };
+            favorites.unshift(favoriteItem);
         }
+        
+        // 限制收藏数量
+        if (favorites.length > 200) {
+            favorites = favorites.slice(0, 200);
+        }
+        
         setStorage('favorites', favorites);
         if (type === 'template') updateTemplateFavoriteIcon();
         else updateResultFavoriteIcon();
@@ -395,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadFavorites() {
-        renderGrid(favoritesGrid, getStorage('favorites'), '暂无收藏');
+        renderGrid(favoritesGrid, getStorage('favorites'), '暂无收藏', 'favorites');
     }
     if (favoriteTemplateBtn) {
         favoriteTemplateBtn.addEventListener('click', () => {
@@ -427,19 +443,77 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 历史记录 ---
     function addToHistory(imageData) {
         let history = getStorage('history');
-        if (!history.some(item => item.id === imageData.id)) {
-            history.unshift(imageData);
-            if (history.length > 50) history.pop();
-            setStorage('history', history);
+        
+        // 添加时间戳
+        const historyItem = {
+            ...imageData,
+            timestamp: Date.now(),
+            id: imageData.id || Date.now()
+        };
+        
+        // 检查是否已存在（基于prompt和src）
+        const existingIndex = history.findIndex(item => 
+            item.prompt === historyItem.prompt && item.src === historyItem.src
+        );
+        
+        if (existingIndex > -1) {
+            // 更新现有项目的时间戳
+            history[existingIndex].timestamp = historyItem.timestamp;
+            // 移到最前面
+            const [updatedItem] = history.splice(existingIndex, 1);
+            history.unshift(updatedItem);
+        } else {
+            // 添加新项目
+            history.unshift(historyItem);
         }
+        
+        // 限制历史记录数量
+        if (history.length > 100) {
+            history = history.slice(0, 100);
+        }
+        
+        setStorage('history', history);
     }
 
     function loadHistory() {
-        renderGrid(historyGrid, getStorage('history'), '暂无历史记录');
+        renderGrid(historyGrid, getStorage('history'), '暂无历史记录', 'history');
     }
 
     // --- 通用网格渲染 ---
-    function renderGrid(gridElement, items, emptyText) {
+    // 删除收藏或历史记录项
+    function deleteItem(itemId, type) {
+        if (!confirm('确定要删除这个项目吗？')) return;
+        
+        const storageKey = type === 'favorites' ? 'favorites' : 'history';
+        let items = getStorage(storageKey);
+        items = items.filter(item => item.id !== itemId);
+        setStorage(storageKey, items);
+        
+        // 重新加载网格
+        if (type === 'favorites') {
+            loadFavorites();
+        } else {
+            loadHistory();
+        }
+    }
+
+    // 清空所有历史记录
+    function clearAllHistory() {
+        if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) return;
+        
+        setStorage('history', []);
+        loadHistory();
+    }
+
+    // 清空所有收藏
+    function clearAllFavorites() {
+        if (!confirm('确定要清空所有收藏吗？此操作不可恢复。')) return;
+        
+        setStorage('favorites', []);
+        loadFavorites();
+    }
+
+    function renderGrid(gridElement, items, emptyText, type) {
         // 清理现有事件监听器
         const existingItems = gridElement.querySelectorAll('.grid-item');
         existingItems.forEach(item => {
@@ -448,8 +522,41 @@ document.addEventListener('DOMContentLoaded', () => {
         
         gridElement.innerHTML = '';
         
+        // 添加操作按钮区域
+        if (items && items.length > 0) {
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'grid-actions';
+            actionsDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: rgba(120, 120, 128, 0.1); border-radius: 8px;';
+            
+            const info = document.createElement('span');
+            info.style.color = 'var(--text-color-secondary)';
+            info.textContent = `共 ${items.length} 项`;
+            
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'clear-all-btn';
+            clearBtn.style.cssText = 'background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.85em; cursor: pointer;';
+            clearBtn.textContent = type === 'favorites' ? '清空收藏' : '清空历史';
+            clearBtn.addEventListener('click', () => {
+                if (type === 'favorites') {
+                    clearAllFavorites();
+                } else {
+                    clearAllHistory();
+                }
+            });
+            
+            actionsDiv.appendChild(info);
+            actionsDiv.appendChild(clearBtn);
+            gridElement.appendChild(actionsDiv);
+        }
+        
         if (!items || items.length === 0) {
-            gridElement.innerHTML = `<p style="text-align:center; color:var(--text-color-light);">${emptyText}</p>`;
+            const emptyDiv = document.createElement('div');
+            emptyDiv.style.cssText = 'text-align: center; color: var(--text-color-secondary); padding: 40px;';
+            emptyDiv.innerHTML = `
+                <div style="font-size: 3em; margin-bottom: 10px;">${type === 'favorites' ? '💝' : '📝'}</div>
+                <p>${emptyText}</p>
+            `;
+            gridElement.appendChild(emptyDiv);
             return;
         }
         
@@ -460,9 +567,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const maxItems = 100;
         const limitedItems = items.slice(0, maxItems);
         
-        limitedItems.forEach(item => {
+        limitedItems.forEach((item, index) => {
             const gridItem = document.createElement('div');
             gridItem.className = 'grid-item';
+            gridItem.style.position = 'relative';
             
             const img = document.createElement('img');
             const imgSrc = item.thumbnail || item.src || '';
@@ -474,15 +582,61 @@ document.addEventListener('DOMContentLoaded', () => {
             p.title = item.prompt || '';
             p.textContent = item.prompt || '';
             
-            // 使用单个事件监听器
+            // 删除按钮
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-item-btn';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.style.cssText = `
+                position: absolute;
+                top: 5px;
+                right: 5px;
+                background: rgba(220, 53, 69, 0.9);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                font-size: 16px;
+                line-height: 1;
+                cursor: pointer;
+                display: none;
+                z-index: 10;
+            `;
+            
+            // 鼠标悬停显示删除按钮
+            gridItem.addEventListener('mouseenter', () => {
+                deleteBtn.style.display = 'block';
+            });
+            
+            gridItem.addEventListener('mouseleave', () => {
+                deleteBtn.style.display = 'none';
+            });
+            
+            // 删除事件
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteItem(item.id, type);
+            });
+            
+            // 点击图片查看
             img.addEventListener('click', () => {
                 displayImage({ src: getProxiedImageUrl(imgSrc), prompt: item.prompt, id: item.id });
                 closeModal(favoritesModal);
                 closeModal(historyModal);
             });
             
+            // 添加时间信息（如果有）
+            if (item.timestamp || item.id) {
+                const timeInfo = document.createElement('div');
+                timeInfo.style.cssText = 'font-size: 0.75em; color: var(--text-color-secondary); padding: 5px 10px;';
+                const date = item.timestamp ? new Date(item.timestamp) : new Date(item.id);
+                timeInfo.textContent = date.toLocaleString();
+                gridItem.appendChild(timeInfo);
+            }
+            
             gridItem.appendChild(img);
             gridItem.appendChild(p);
+            gridItem.appendChild(deleteBtn);
             fragment.appendChild(gridItem);
         });
         
@@ -665,6 +819,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
         switchTab(tabTextToImage, textToImagePanel);
     };
+
+    // --- 导出功能 ---
+    function exportData(data, filename) {
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        URL.revokeObjectURL(url);
+    }
+
+    // 导出收藏
+    const exportFavoritesBtn = document.getElementById('export-favorites-btn');
+    if (exportFavoritesBtn) {
+        exportFavoritesBtn.addEventListener('click', () => {
+            const favorites = getStorage('favorites');
+            const filename = `nano-banana-favorites-${new Date().toISOString().split('T')[0]}.json`;
+            exportData(favorites, filename);
+        });
+    }
+
+    // 导出历史记录
+    const exportHistoryBtn = document.getElementById('export-history-btn');
+    if (exportHistoryBtn) {
+        exportHistoryBtn.addEventListener('click', () => {
+            const history = getStorage('history');
+            const filename = `nano-banana-history-${new Date().toISOString().split('T')[0]}.json`;
+            exportData(history, filename);
+        });
+    }
 
     // --- 页面卸载清理 ---
     window.addEventListener('beforeunload', () => {

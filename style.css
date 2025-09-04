@@ -552,6 +552,12 @@ html[data-theme="dark"] .main-controls .tabs button.active {
     margin-bottom: 20px;
 }
 
+.modal-header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .modal-header h2 {
     margin: 0;
     color: var(--text-color);
@@ -998,6 +1004,110 @@ textarea:focus-visible {
 ::selection {
     background-color: var(--accent-color);
     color: white;
+}
+
+/* --- 网格操作按钮 --- */
+.grid-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: rgba(120, 120, 128, 0.1);
+    border-radius: 8px;
+}
+
+.clear-all-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.clear-all-btn:hover {
+    background: #c82333;
+}
+
+/* --- 删除按钮 --- */
+.delete-item-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(220, 53, 69, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: none;
+    z-index: 10;
+    transition: all 0.2s;
+}
+
+.delete-item-btn:hover {
+    background: rgba(220, 53, 69, 1);
+    transform: scale(1.1);
+}
+
+.grid-item:hover .delete-item-btn {
+    display: block;
+}
+
+/* --- 网格项目悬停效果 --- */
+.grid-item {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.grid-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* --- 空状态样式 --- */
+.empty-state {
+    text-align: center;
+    color: var(--text-color-secondary);
+    padding: 40px;
+}
+
+.empty-state .icon {
+    font-size: 3em;
+    margin-bottom: 10px;
+    opacity: 0.5;
+}
+
+/* --- 时间信息样式 --- */
+.time-info {
+    font-size: 0.75em;
+    color: var(--text-color-secondary);
+    padding: 5px 10px;
+    background: rgba(120, 120, 128, 0.05);
+    border-top: 1px solid var(--border-color);
+}
+
+/* --- 移动端优化 --- */
+@media (max-width: 768px) {
+    .grid-actions {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+    }
+    
+    .delete-item-btn {
+        display: block;
+        opacity: 0.7;
+    }
+    
+    .grid-item:hover .delete-item-btn {
+        opacity: 1;
+    }
 }
 
 /* --- 性能优化 --- */
