@@ -40,9 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyDetailModal = document.getElementById('history-detail-modal');
     const closeHistoryDetailModalBtn = document.getElementById('close-history-detail-modal-btn');
     const downloadHistoryDetailBtn = document.getElementById('download-history-detail-btn');
+    const favoriteHistoryDetailBtn = document.getElementById('favorite-history-detail-btn');
     const historyDetailImage = document.getElementById('history-detail-image');
     const historyDetailPrompt = document.getElementById('history-detail-prompt');
-    const favoriteHistoryDetailBtn = document.getElementById('favorite-history-detail-btn');
 
     const fileUploadArea = document.querySelector('.file-upload-area');
     const fileInput = document.getElementById('image-input');
@@ -185,22 +185,26 @@ document.addEventListener('DOMContentLoaded', () => {
             thumbItem.className = 'thumbnail-item';
             thumbItem.dataset.id = example.id || example.title;
 
-            // 智能判断缩略图是图片还是HTML图标
+            // 智能处理缩略图：区分图片URL和HTML图标
             if (example.thumbnail.startsWith('http') || example.thumbnail.startsWith('data:image')) {
                 const img = document.createElement('img');
                 img.alt = example.title;
-                // 使用占位符，等待懒加载
-                img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
+                img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4='; // Placeholder
                 img.dataset.src = getProxiedImageUrl(example.thumbnail);
                 img.onerror = function() {
-                    if (this.src !== 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=') {
+                    if (this.src.startsWith('http')) { // Only log error for real URLs
                         console.warn(`缩略图加载失败: ${this.dataset.src}`);
                     }
                 };
                 thumbItem.appendChild(img);
             } else {
-                // 如果是HTML，直接渲染
+                // 如果不是URL，则直接渲染HTML内容
                 thumbItem.innerHTML = example.thumbnail;
+                thumbItem.style.display = 'flex';
+                thumbItem.style.alignItems = 'center';
+                thumbItem.style.justifyContent = 'center';
+                thumbItem.style.fontSize = '2em'; // Adjust icon size if needed
+                thumbItem.style.backgroundColor = 'var(--bg-color)';
             }
 
             // 点击事件
@@ -524,26 +528,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         setStorage('favorites', favorites);
-        if (type === 'template') updateTemplateFavoriteIcon();
-        else updateResultFavoriteIcon();
+        if (type === 'template') {
+            updateTemplateFavoriteIcon();
+        } else if (type === 'result') {
+            updateResultFavoriteIcon();
+        }
+        // No need to update detail view icon here, it's handled on open
+    }
+
+    function updateAndBindFavoriteButton(button, item, type) {
+        if (!button || !item) return;
+
+        const itemId = item.id || item.title || item.src;
+        const favorites = getStorage('favorites');
+        const isFavorited = favorites.some(fav => fav.id === itemId);
+        button.classList.toggle('favorited', isFavorited);
+
+        // Clone and replace to remove old event listeners
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        newButton.addEventListener('click', () => {
+            toggleFavorite({ ...item, id: itemId }, type);
+             // Re-update the button state after click
+            updateAndBindFavoriteButton(newButton, item, type);
+        });
+        
+        // return the new button if needed
+        return newButton;
     }
 
     function updateTemplateFavoriteIcon() {
         const example = currentExamples[currentIndexOnPage];
-        if (!example || !favoriteTemplateBtn) return;
-        
-        const favorites = getStorage('favorites');
-        const exampleId = example.id || example.title;
-        const isFavorited = favorites.some(fav => fav.id === exampleId);
-        favoriteTemplateBtn.classList.toggle('favorited', isFavorited);
+        if (example) {
+            favoriteTemplateBtn = updateAndBindFavoriteButton(favoriteTemplateBtn, example, 'template');
+        }
     }
 
     function updateResultFavoriteIcon() {
-        if (!currentGeneratedImage || !favoriteResultBtn) return;
-        
-        const favorites = getStorage('favorites');
-        const isFavorited = favorites.some(fav => fav.id === currentGeneratedImage.id);
-        favoriteResultBtn.classList.toggle('favorited', isFavorited);
+        if (currentGeneratedImage) {
+            favoriteResultBtn = updateAndBindFavoriteButton(favoriteResultBtn, currentGeneratedImage, 'result');
+        }
     }
 
     function loadFavorites() {
@@ -749,33 +774,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             // 点击图片查看
-            thumbItem.addEventListener('click', () => {
-                const isHistory = type === 'history';
-                const sourceItem = isHistory ? item : example;
+            img.addEventListener('click', () => {
+                // 统一使用新的详情模态框
+                const fullSrc = type === 'history' ? item.src : (item.src || item.thumbnail);
+                const itemToView = { ...item, src: fullSrc, thumbnail: item.thumbnail || fullSrc };
                 
-                const fullSrc = sourceItem.src || sourceItem.thumbnail;
-                const itemId = sourceItem.id || `gen_${sourceItem.timestamp}`;
-
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
-                historyDetailPrompt.textContent = sourceItem.prompt;
-
-                // 更新收藏按钮状态
-                const favorites = getStorage('favorites');
-                const isFavorited = favorites.some(fav => fav.id === itemId);
-                favoriteHistoryDetailBtn.classList.toggle('favorited', isFavorited);
-
-                // 收藏按钮点击事件
-                favoriteHistoryDetailBtn.onclick = () => {
-                    toggleFavorite({ ...sourceItem, id: itemId }, 'result');
-                    // 更新按钮状态
-                    favoriteHistoryDetailBtn.classList.toggle('favorited');
-                };
+                historyDetailPrompt.textContent = item.prompt;
                 
-                // 下载按钮点击事件
+                // 更新并绑定收藏按钮
+                updateAndBindFavoriteButton(favoriteHistoryDetailBtn, itemToView, 'detail');
+                
+                // 设置下载按钮功能
                 downloadHistoryDetailBtn.onclick = () => {
                     const link = document.createElement('a');
                     link.href = fullSrc;
-                    link.download = `nano-banana-${type}-${itemId}.png`;
+                    link.download = `nano-banana-${type}-${item.id || Date.now()}.png`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
