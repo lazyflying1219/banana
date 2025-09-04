@@ -60,77 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const getStorage = (key) => JSON.parse(localStorage.getItem(key)) || [];
     const setStorage = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 
-    // --- 图片放大模态框 ---
-    function createImageModal() {
-        const modal = document.createElement('div');
-        modal.className = 'image-modal-overlay hidden';
-        modal.innerHTML = `
-            <div class="image-modal-content">
-                <div class="image-modal-header">
-                    <h3 class="image-modal-title">生成的图片</h3>
-                    <button class="image-modal-close">&times;</button>
-                </div>
-                <div class="image-modal-body">
-                    <img class="image-modal-img" alt="放大图片">
-                </div>
-                <div class="image-modal-footer">
-                    <button class="image-modal-download">下载图片</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        return modal;
-    }
-
-    const imageModal = createImageModal();
-    const imageModalImg = imageModal.querySelector('.image-modal-img');
-    const imageModalTitle = imageModal.querySelector('.image-modal-title');
-    const imageModalClose = imageModal.querySelector('.image-modal-close');
-    const imageModalDownload = imageModal.querySelector('.image-modal-download');
-
-    function openImageModal(src, prompt) {
-        imageModalImg.src = src;
-        imageModalTitle.textContent = prompt || '生成的图片';
-        imageModal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden';
-    }
-
-    function closeImageModal() {
-        imageModal.classList.add('hidden');
-        document.body.style.overflow = '';
-    }
-
-    // 模态框事件监听
-    imageModalClose.addEventListener('click', closeImageModal);
-    imageModal.addEventListener('click', (e) => {
-        if (e.target === imageModal) closeImageModal();
-    });
-    
-    imageModalDownload.addEventListener('click', () => {
-        if (imageModalImg.src) {
-            const link = document.createElement('a');
-            link.href = imageModalImg.src;
-            link.download = `nano-banana-${Date.now()}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    });
-
-    // ESC键关闭模态框
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !imageModal.classList.contains('hidden')) {
-            closeImageModal();
-        }
-    });
-
-    // 点击外部关闭画廊预览
-    document.addEventListener('click', (e) => {
-        if (galleryPreviewer.classList.contains('visible') && !galleryPreviewer.contains(e.target) && !e.target.closest('.thumbnail-item')) {
-            cleanupGalleryPreviewer();
-        }
-    });
-
     // --- 页签切换 ---
     function switchTab(activeTab, activePanel) {
         [tabTextToImage, tabImageToImage].forEach(tab => tab.classList.remove('active'));
@@ -192,54 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
         galleryPreviewer.innerHTML = '';
     }
 
-    function showGalleryPreviewer(example, targetElement) {
-        cleanupGalleryPreviewer();
-
-        const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
-        if (imagesToShow.length === 0) {
-            imagesToShow.push(example.thumbnail);
-        }
-
-        const proxiedImages = imagesToShow.map(url => getProxiedImageUrl(url));
-        const maxPreviewImages = 3;
-        const limitedImages = proxiedImages.slice(0, maxPreviewImages);
-
-        galleryPreviewer.innerHTML = '';
-        limitedImages.forEach(src => {
-            const previewImg = document.createElement('img');
-            previewImg.loading = 'lazy';
-            previewImg.onerror = function() {
-                console.warn(`预览图加载失败: ${this.src}`);
-                this.remove();
-            };
-            previewImg.src = src;
-            galleryPreviewer.appendChild(previewImg);
-        });
-
-        const rect = targetElement.getBoundingClientRect();
-        galleryPreviewer.style.left = `${rect.right + 15}px`;
-        galleryPreviewer.style.top = `${window.scrollY + rect.top - 50}px`;
-        galleryPreviewer.classList.add('visible');
-
-        const previewImages = galleryPreviewer.querySelectorAll('img');
-        if (previewImages.length > 0) {
-            let currentPreviewIndex = 0;
-            previewImages[currentPreviewIndex].classList.add('active-preview');
-
-            if (previewImages.length > 1) {
-                previewInterval = setInterval(() => {
-                    if (previewImages[currentPreviewIndex]) {
-                        previewImages[currentPreviewIndex].classList.remove('active-preview');
-                    }
-                    currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
-                    if (previewImages[currentPreviewIndex]) {
-                        previewImages[currentPreviewIndex].classList.add('active-preview');
-                    }
-                }, 1500);
-            }
-        }
-    }
-
     function loadPage(page) {
         // 清理之前的预览器状态
         cleanupGalleryPreviewer();
@@ -282,21 +163,69 @@ document.addEventListener('DOMContentLoaded', () => {
             img.src = getProxiedImageUrl(example.thumbnail);
             thumbItem.appendChild(img);
 
-            // 点击和预览事件
-            thumbItem.addEventListener('click', (e) => {
-                updateGalleryDisplay(index);
-                // 在触摸设备上，点击时显示预览
-                if (!window.matchMedia('(hover: hover)').matches) {
-                    showGalleryPreviewer(example, e.currentTarget);
-                }
-            });
+            // 点击事件
+            const clickHandler = () => updateGalleryDisplay(index);
+            thumbItem.addEventListener('click', clickHandler);
 
-            // 桌面端的悬停预览
+            // 预览器事件 - 仅在桌面端启用
             if (window.matchMedia('(hover: hover)').matches) {
-                thumbItem.addEventListener('mouseenter', (e) => {
-                    showGalleryPreviewer(example, e.currentTarget);
-                });
-                thumbItem.addEventListener('mouseleave', cleanupGalleryPreviewer);
+                let mouseEnterHandler, mouseLeaveHandler;
+                
+                mouseEnterHandler = (e) => {
+                    cleanupPreviewInterval();
+                    
+                    const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
+                    if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
+                    
+                    // 使用代理URL
+                    const proxiedImages = imagesToShow.map(url => getProxiedImageUrl(url));
+
+                    // 限制预览图片数量，避免内存过度使用
+                    const maxPreviewImages = 3;
+                    const limitedImages = proxiedImages.slice(0, maxPreviewImages);
+
+                    galleryPreviewer.innerHTML = '';
+                    limitedImages.forEach(src => {
+                        const previewImg = document.createElement('img');
+                        previewImg.loading = 'lazy';
+                        previewImg.onerror = function() {
+                            console.warn(`预览图加载失败: ${this.src}`);
+                            this.remove(); // 移除失败的图片
+                        };
+                        previewImg.src = src;
+                        galleryPreviewer.appendChild(previewImg);
+                    });
+
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    galleryPreviewer.style.left = `${rect.right + 15}px`;
+                    galleryPreviewer.style.top = `${window.scrollY + rect.top - 50}px`;
+                    galleryPreviewer.classList.add('visible');
+
+                    const previewImages = galleryPreviewer.querySelectorAll('img');
+                    if (previewImages.length > 0) {
+                        let currentPreviewIndex = 0;
+                        previewImages[currentPreviewIndex].classList.add('active-preview');
+
+                        if (previewImages.length > 1) {
+                            previewInterval = setInterval(() => {
+                                if (previewImages[currentPreviewIndex]) {
+                                    previewImages[currentPreviewIndex].classList.remove('active-preview');
+                                }
+                                currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
+                                if (previewImages[currentPreviewIndex]) {
+                                    previewImages[currentPreviewIndex].classList.add('active-preview');
+                                }
+                            }, 1500);
+                        }
+                    }
+                };
+
+                mouseLeaveHandler = () => {
+                    cleanupGalleryPreviewer();
+                };
+
+                thumbItem.addEventListener('mouseenter', mouseEnterHandler);
+                thumbItem.addEventListener('mouseleave', mouseLeaveHandler);
             }
 
             fragment.appendChild(thumbItem);
@@ -334,13 +263,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         currentImg.src = imageData.src;
         currentImg.alt = imageData.prompt || 'Generated Image';
-        currentImg.style.cursor = 'pointer';
-        currentImg.title = '点击放大查看';
-        
-        // 添加点击放大功能
-        currentImg.addEventListener('click', () => {
-            openImageModal(imageData.src, imageData.prompt);
-        });
         
         currentImg.style.opacity = 0;
         imageDisplay.appendChild(currentImg);
@@ -521,16 +443,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (favoriteResultBtn) {
         favoriteResultBtn.addEventListener('click', () => {
             if (currentGeneratedImage) toggleFavorite(currentGeneratedImage, 'result');
-        });
-    }
-
-    // --- 放大功能 ---
-    const enlargeResultBtn = document.getElementById('enlarge-result-btn');
-    if (enlargeResultBtn) {
-        enlargeResultBtn.addEventListener('click', () => {
-            if (currentGeneratedImage && currentGeneratedImage.src) {
-                openImageModal(currentGeneratedImage.src, currentGeneratedImage.prompt);
-            }
         });
     }
 
@@ -727,9 +639,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteItem(item.id, type);
             });
             
-            // 点击图片查看 - 直接放大而不是替换主显示区
+            // 点击图片查看
             img.addEventListener('click', () => {
-                openImageModal(getProxiedImageUrl(imgSrc), item.prompt);
+                displayImage({ src: getProxiedImageUrl(imgSrc), prompt: item.prompt, id: item.id });
+                closeModal(favoritesModal);
+                closeModal(historyModal);
             });
             
             // 添加时间信息（如果有）
