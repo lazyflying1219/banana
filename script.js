@@ -87,6 +87,15 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(modal); });
     });
 
+    // --- 图片代理函数 ---
+    function getProxiedImageUrl(originalUrl) {
+        // 检查是否为GitHub raw URL
+        if (originalUrl && originalUrl.includes('raw.githubusercontent.com')) {
+            return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+        }
+        return originalUrl;
+    }
+
     // --- 灵感画廊 (性能优化版) ---
     function updateGalleryDisplay(indexOnPage) {
         const example = currentExamples[indexOnPage];
@@ -99,11 +108,36 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTemplateFavoriteIcon();
     }
 
+    // 清理函数
+    function cleanupPreviewInterval() {
+        if (previewInterval) {
+            clearInterval(previewInterval);
+            previewInterval = null;
+        }
+    }
+
+    function cleanupGalleryPreviewer() {
+        cleanupPreviewInterval();
+        galleryPreviewer.classList.remove('visible');
+        // 清空预览器内容，释放图片内存
+        galleryPreviewer.innerHTML = '';
+    }
+
     function loadPage(page) {
+        // 清理之前的预览器状态
+        cleanupGalleryPreviewer();
+        
         const start = page * itemsPerPage;
         const end = start + itemsPerPage;
         currentExamples = allExamples.slice(start, end);
-        thumbnailTrack.innerHTML = ''; // 清空现有缩略图
+        
+        // 清空现有缩略图并移除事件监听器
+        const existingItems = thumbnailTrack.querySelectorAll('.thumbnail-item');
+        existingItems.forEach(item => {
+            // 移除所有事件监听器
+            item.replaceWith(item.cloneNode(true));
+        });
+        thumbnailTrack.innerHTML = '';
 
         if (currentExamples.length === 0) {
             promptDisplayArea.textContent = '该分类下暂无灵感...';
@@ -112,6 +146,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // 使用文档片段提高性能
+        const fragment = document.createDocumentFragment();
+
         currentExamples.forEach((example, index) => {
             const thumbItem = document.createElement('div');
             thumbItem.className = 'thumbnail-item';
@@ -119,63 +156,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const img = document.createElement('img');
             img.alt = example.title;
+            img.loading = 'lazy'; // 懒加载
             img.onerror = function() {
                 console.warn(`缩略图加载失败: ${this.src}`);
                 this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNmMmY0ZjYiLz48cGF0aCBkPSJNNTAuNzkyOSAzMy4xMjVIMzQuMjA4M1Y0OS43MDgzSDUwLjc5MjlaTTQ2LjQxNjcgMzcuNUw0Mi4wNDgzIDQxLjg3NUwzNy42Nzg0IDM3LjVIMzUuNTYyNVY0Ny41ODMzSDQ5LjQzNzVWNDEuODc1TDQ2LjQxNjcgMzcuNVoiIGZpbGw9IiNjMmNhZDEiLz48L3N2Zz4=';
                 this.style.objectFit = 'scale-down';
             };
-            img.src = example.thumbnail;
+            img.src = getProxiedImageUrl(example.thumbnail);
             thumbItem.appendChild(img);
 
-            thumbItem.addEventListener('click', () => updateGalleryDisplay(index));
+            // 点击事件
+            const clickHandler = () => updateGalleryDisplay(index);
+            thumbItem.addEventListener('click', clickHandler);
 
-            // --- 预览器事件监听 (优化后) ---
-            thumbItem.addEventListener('mouseenter', (e) => {
-                if (previewInterval) clearInterval(previewInterval);
-                galleryPreviewer.innerHTML = ''; // 清空旧内容
+            // 预览器事件 - 仅在桌面端启用
+            if (window.matchMedia('(hover: hover)').matches) {
+                let mouseEnterHandler, mouseLeaveHandler;
+                
+                mouseEnterHandler = (e) => {
+                    cleanupPreviewInterval();
+                    
+                    const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
+                    if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
+                    
+                    // 使用代理URL
+                    const proxiedImages = imagesToShow.map(url => getProxiedImageUrl(url));
 
-                const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
-                if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
+                    // 限制预览图片数量，避免内存过度使用
+                    const maxPreviewImages = 3;
+                    const limitedImages = proxiedImages.slice(0, maxPreviewImages);
 
-                imagesToShow.forEach(src => {
-                    const previewImg = document.createElement('img');
-                    previewImg.onerror = function() {
-                        console.warn(`预览图加载失败: ${this.src}`);
-                        this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgdmlld0JveD0iMCAwIDQwMCA0MDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRw6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iI2YyZjRmNiIvPjxwYXRoIGQ9Ik0yMjAuNTg4IDE2My41MjlIMTc5LjQxMlYyMzYuNDcxSDIyMC41ODhaTTIwOS40MTIgMTc5LjQxMkwxOTcuMDYxIDE5MS43NjNM MTg0LjcxMSAxNzkuNDEySDE3OS40MTJWMTk2LjQ3MUwyMDkuNDEyIDIyNi40NzFWMTkxLjc2M0wyMDMuNTI5IDE4NS44OEwyMDkuNDEyIDE3OS40MTJaIiBmaWxsPSIjYzJjYWQxIi8+PC9zdmc+';
-                        this.style.objectFit = 'scale-down';
-                    };
-                    previewImg.src = src;
-                    galleryPreviewer.appendChild(previewImg);
-                });
+                    galleryPreviewer.innerHTML = '';
+                    limitedImages.forEach(src => {
+                        const previewImg = document.createElement('img');
+                        previewImg.loading = 'lazy';
+                        previewImg.onerror = function() {
+                            console.warn(`预览图加载失败: ${this.src}`);
+                            this.remove(); // 移除失败的图片
+                        };
+                        previewImg.src = src;
+                        galleryPreviewer.appendChild(previewImg);
+                    });
 
-                const rect = e.currentTarget.getBoundingClientRect();
-                galleryPreviewer.style.left = `${rect.right + 15}px`;
-                galleryPreviewer.style.top = `${window.scrollY + rect.top - 50}px`;
-                galleryPreviewer.classList.add('visible');
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    galleryPreviewer.style.left = `${rect.right + 15}px`;
+                    galleryPreviewer.style.top = `${window.scrollY + rect.top - 50}px`;
+                    galleryPreviewer.classList.add('visible');
 
-                const previewImages = galleryPreviewer.querySelectorAll('img');
-                if (previewImages.length > 0) {
-                    let currentPreviewIndex = 0;
-                    previewImages[currentPreviewIndex].classList.add('active-preview');
+                    const previewImages = galleryPreviewer.querySelectorAll('img');
+                    if (previewImages.length > 0) {
+                        let currentPreviewIndex = 0;
+                        previewImages[currentPreviewIndex].classList.add('active-preview');
 
-                    if (previewImages.length > 1) {
-                        previewInterval = setInterval(() => {
-                            previewImages[currentPreviewIndex].classList.remove('active-preview');
-                            currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
-                            previewImages[currentPreviewIndex].classList.add('active-preview');
-                        }, 1500);
+                        if (previewImages.length > 1) {
+                            previewInterval = setInterval(() => {
+                                if (previewImages[currentPreviewIndex]) {
+                                    previewImages[currentPreviewIndex].classList.remove('active-preview');
+                                }
+                                currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
+                                if (previewImages[currentPreviewIndex]) {
+                                    previewImages[currentPreviewIndex].classList.add('active-preview');
+                                }
+                            }, 1500);
+                        }
                     }
-                }
-            });
+                };
 
-            thumbItem.addEventListener('mouseleave', () => {
-                if (previewInterval) clearInterval(previewInterval);
-                galleryPreviewer.classList.remove('visible');
-            });
+                mouseLeaveHandler = () => {
+                    cleanupGalleryPreviewer();
+                };
 
-            thumbnailTrack.appendChild(thumbItem);
+                thumbItem.addEventListener('mouseenter', mouseEnterHandler);
+                thumbItem.addEventListener('mouseleave', mouseLeaveHandler);
+            }
+
+            fragment.appendChild(thumbItem);
         });
 
+        thumbnailTrack.appendChild(fragment);
         updateGalleryDisplay(0);
         updatePaginationButtons();
     }
@@ -230,11 +288,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
         const images = uploadedFiles.map(f => f.dataUrl);
 
+        // 验证输入
+        if (!prompt.trim()) {
+            alert('请输入提示词');
+            return;
+        }
+
         generateBtn.textContent = '生成中...';
         generateBtn.disabled = true;
-        imageDisplay.innerHTML = '<p>正在为您生成图片...</p>';
+        imageDisplay.innerHTML = '<div class="loading-spinner"><p>正在为您生成图片...</p><div class="spinner"></div></div>';
         imageActions.classList.add('hidden');
-
 
         try {
             const response = await fetch(apiUrl, {
@@ -244,8 +307,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                // If response is not OK, read the body as JSON and throw it as an error
-                const errorData = await response.json();
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch {
+                    errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+                }
                 throw errorData; 
             }
 
@@ -254,14 +321,34 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.src) {
                 displayImage({ src: result.src, prompt: prompt, model: modelName });
             } else {
-                throw new Error('API 返回数据中未找到 "src" 字段');
+                throw new Error('API 返回数据中未找到图片');
             }
 
         } catch (error) {
             console.error('API 生成失败:', error);
-            // The robust error handler
-            const errorMessage = JSON.stringify(error, null, 2);
-            imageDisplay.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; text-align: left; font-size: 12px; padding: 10px;">${errorMessage}</pre>`;
+            let errorMessage = '生成失败，请重试';
+            
+            if (error.error) {
+                errorMessage = error.error;
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            
+            const errorP = document.createElement('p');
+            errorP.textContent = `❌ ${errorMessage}`;
+            
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'retry-btn';
+            retryBtn.textContent = '重试';
+            retryBtn.addEventListener('click', generateImage);
+            
+            errorDiv.appendChild(errorP);
+            errorDiv.appendChild(retryBtn);
+            imageDisplay.innerHTML = '';
+            imageDisplay.appendChild(errorDiv);
         
         } finally {
             generateBtn.textContent = '生成';
@@ -322,6 +409,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- 下载功能 ---
+    const downloadResultBtn = document.getElementById('download-result-btn');
+    if (downloadResultBtn) {
+        downloadResultBtn.addEventListener('click', () => {
+            if (currentGeneratedImage && currentGeneratedImage.src) {
+                const link = document.createElement('a');
+                link.href = currentGeneratedImage.src;
+                link.download = `nano-banana-${Date.now()}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+    }
+
     // --- 历史记录 ---
     function addToHistory(imageData) {
         let history = getStorage('history');
@@ -338,26 +440,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 通用网格渲染 ---
     function renderGrid(gridElement, items, emptyText) {
+        // 清理现有事件监听器
+        const existingItems = gridElement.querySelectorAll('.grid-item');
+        existingItems.forEach(item => {
+            item.replaceWith(item.cloneNode(true));
+        });
+        
         gridElement.innerHTML = '';
+        
         if (!items || items.length === 0) {
             gridElement.innerHTML = `<p style="text-align:center; color:var(--text-color-light);">${emptyText}</p>`;
             return;
         }
-        items.forEach(item => {
+        
+        // 使用文档片段提高性能
+        const fragment = document.createDocumentFragment();
+        
+        // 限制显示数量，避免内存过度使用
+        const maxItems = 100;
+        const limitedItems = items.slice(0, maxItems);
+        
+        limitedItems.forEach(item => {
             const gridItem = document.createElement('div');
             gridItem.className = 'grid-item';
-            const imgSrc = item.thumbnail || item.src || ''; 
-            gridItem.innerHTML = `
-                <img src="${imgSrc}" alt="Image">
-                <p title="${item.prompt}">${item.prompt}</p>
-            `;
-            gridItem.querySelector('img').addEventListener('click', () => {
-                displayImage({ src: imgSrc, prompt: item.prompt, id: item.id });
+            
+            const img = document.createElement('img');
+            const imgSrc = item.thumbnail || item.src || '';
+            img.src = getProxiedImageUrl(imgSrc);
+            img.alt = 'Image';
+            img.loading = 'lazy';
+            
+            const p = document.createElement('p');
+            p.title = item.prompt || '';
+            p.textContent = item.prompt || '';
+            
+            // 使用单个事件监听器
+            img.addEventListener('click', () => {
+                displayImage({ src: getProxiedImageUrl(imgSrc), prompt: item.prompt, id: item.id });
                 closeModal(favoritesModal);
                 closeModal(historyModal);
             });
-            gridElement.appendChild(gridItem);
+            
+            gridItem.appendChild(img);
+            gridItem.appendChild(p);
+            fragment.appendChild(gridItem);
         });
+        
+        gridElement.appendChild(fragment);
+        
+        // 如果有更多项目，显示提示
+        if (items.length > maxItems) {
+            const moreInfo = document.createElement('p');
+            moreInfo.style.textAlign = 'center';
+            moreInfo.style.color = 'var(--text-color-secondary)';
+            moreInfo.textContent = `显示了前 ${maxItems} 项，共 ${items.length} 项`;
+            gridElement.appendChild(moreInfo);
+        }
     }
 
     // --- 文件上传 (支持多图) ---
@@ -375,17 +513,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function handleFiles(files) {
+        const maxFiles = 5;
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        
+        if (uploadedFiles.length + files.length > maxFiles) {
+            alert(`最多只能上传 ${maxFiles} 张图片`);
+            return;
+        }
+        
         [...files].forEach(file => {
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    uploadedFiles.push({ file, dataUrl: e.target.result });
-                    renderUploadPreviews();
-                };
-                reader.readAsDataURL(file);
-            } else {
-                console.warn('忽略非图片文件：', file.name);
+            if (!file.type.startsWith('image/')) {
+                alert(`文件 "${file.name}" 不是图片格式`);
+                return;
             }
+            
+            if (file.size > maxSize) {
+                alert(`文件 "${file.name}" 太大，请选择小于 10MB 的图片`);
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                uploadedFiles.push({ file, dataUrl: e.target.result });
+                renderUploadPreviews();
+            };
+            reader.onerror = () => {
+                alert(`读取文件 "${file.name}" 失败`);
+            };
+            reader.readAsDataURL(file);
         });
     }
 
@@ -399,25 +554,55 @@ document.addEventListener('DOMContentLoaded', () => {
             thumbsContainer.className = 'upload-thumbs';
             fileUploadArea.appendChild(thumbsContainer);
         }
+        
+        // 清理现有的事件监听器
+        const existingButtons = thumbsContainer.querySelectorAll('.remove-thumb');
+        existingButtons.forEach(btn => {
+            btn.replaceWith(btn.cloneNode(true));
+        });
+        
         thumbsContainer.innerHTML = '';
+        
+        // 使用文档片段提高性能
+        const fragment = document.createDocumentFragment();
+        
         uploadedFiles.forEach((item, index) => {
             const thumbItem = document.createElement('div');
             thumbItem.className = 'upload-thumb-item';
-            thumbItem.innerHTML = `<img src="${item.dataUrl}" alt="preview"><button class="remove-thumb" data-index="${index}">&times;</button>`;
-            thumbsContainer.appendChild(thumbItem);
-        });
-
-        fileUploadArea.querySelectorAll('.remove-thumb').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            
+            const img = document.createElement('img');
+            img.src = item.dataUrl;
+            img.alt = 'preview';
+            img.loading = 'lazy';
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'remove-thumb';
+            removeBtn.textContent = '×';
+            removeBtn.dataset.index = index;
+            
+            // 使用事件委托避免重复绑定
+            removeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const indexToRemove = parseInt(e.target.dataset.index, 10);
-                uploadedFiles.splice(indexToRemove, 1);
+                
+                // 释放dataUrl内存
+                if (uploadedFiles[indexToRemove]) {
+                    URL.revokeObjectURL(uploadedFiles[indexToRemove].dataUrl);
+                    uploadedFiles.splice(indexToRemove, 1);
+                }
+                
                 renderUploadPreviews();
                 if (uploadedFiles.length === 0 && initialText) {
                     initialText.style.display = 'block';
                 }
             });
+            
+            thumbItem.appendChild(img);
+            thumbItem.appendChild(removeBtn);
+            fragment.appendChild(thumbItem);
         });
+        
+        thumbsContainer.appendChild(fragment);
     }
 
     // --- 主题切换 ---
@@ -442,24 +627,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
     themeBtn.addEventListener('click', toggleTheme);
 
+    // --- 设置保存 ---
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', () => {
+            localStorage.setItem('apiUrl', apiUrlInput.value);
+            localStorage.setItem('modelName', modelNameInput.value);
+            closeModal(settingsModal);
+            
+            // 显示保存成功提示
+            const originalText = saveSettingsBtn.textContent;
+            saveSettingsBtn.textContent = '已保存';
+            saveSettingsBtn.style.backgroundColor = '#28a745';
+            setTimeout(() => {
+                saveSettingsBtn.textContent = originalText;
+                saveSettingsBtn.style.backgroundColor = '';
+            }, 1500);
+        });
+    }
+
     // --- 初始化 ---
     const initialize = () => {
         tabTextToImage.addEventListener('click', () => switchTab(tabTextToImage, textToImagePanel));
         tabImageToImage.addEventListener('click', () => switchTab(tabImageToImage, imageToImagePanel));
 
-        // 初始化API设置输入框的默认值
-        if (apiUrlInput) apiUrlInput.value = apiUrlInput.value || '/api/generate';
-        if (modelNameInput) modelNameInput.value = modelNameInput.value || 'vertexpic-gemini-2.5-flash-image-preview';
+        // 从localStorage加载设置
+        const savedApiUrl = localStorage.getItem('apiUrl');
+        const savedModelName = localStorage.getItem('modelName');
+        
+        if (apiUrlInput) apiUrlInput.value = savedApiUrl || '/api/generate';
+        if (modelNameInput) modelNameInput.value = savedModelName || 'vertexpic-gemini-2.5-flash-image-preview';
 
         // 初始化主题
         const savedTheme = localStorage.getItem('theme');
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
 
-        // 确保在所有事件监听器设置完毕后，再初始化
-        // createGalleryPreviewer(); // This function is not defined in the provided script, commenting out.
         switchTab(tabTextToImage, textToImagePanel);
     };
+
+    // --- 页面卸载清理 ---
+    window.addEventListener('beforeunload', () => {
+        cleanupGalleryPreviewer();
+        
+        // 清理上传文件的dataUrl
+        uploadedFiles.forEach(file => {
+            if (file.dataUrl && file.dataUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(file.dataUrl);
+            }
+        });
+        
+        // 清空数组
+        uploadedFiles.length = 0;
+        currentExamples.length = 0;
+        allExamples.length = 0;
+    });
+
+    // --- 页面可见性变化时清理 ---
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            cleanupGalleryPreviewer();
+        }
+    });
 
     initialize();
 });
