@@ -1152,8 +1152,8 @@ textarea:focus-visible {
     }
 }
 
-/* --- 图片放大模态框 --- */
-.image-modal-overlay {
+/* --- 灯箱 (Lightbox) 模态框 --- */
+#lightbox-modal {
     position: fixed;
     top: 0;
     left: 0;
@@ -1166,128 +1166,112 @@ textarea:focus-visible {
     align-items: center;
     justify-content: center;
     z-index: 2000;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s, visibility 0.3s;
 }
 
-.image-modal-overlay:not(.hidden) {
-    opacity: 1;
-    visibility: visible;
-}
-
-.image-modal-content {
-    background: var(--panel-bg-color);
-    border-radius: var(--border-radius);
-    box-shadow: var(--shadow-strong);
-    border: 1px solid var(--border-color);
-    max-width: 95vw;
-    max-height: 95vh;
+.lightbox-content {
+    position: relative;
     display: flex;
     flex-direction: column;
-}
-
-.image-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.image-modal-title {
-    margin: 0;
-    color: var(--text-color);
-    font-size: 1.2em;
-    font-weight: 600;
-    max-width: 400px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.image-modal-close {
-    background: transparent;
-    border: none;
-    font-size: 2em;
-    color: var(--text-color-secondary);
-    cursor: pointer;
-    padding: 0;
-    width: 40px;
-    height: 40px;
-    display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.image-modal-close:hover {
-    background-color: var(--border-color);
-    color: var(--text-color);
-}
-
-.image-modal-body {
-    flex-grow: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 90%;
+    max-width: 600px;
+    height: auto;
     padding: 20px;
-    overflow: hidden;
+    background-color: var(--panel-bg-color);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-strong);
 }
 
-.image-modal-img {
+#lightbox-image {
     max-width: 100%;
-    max-height: 100%;
+    max-height: 75vh;
     object-fit: contain;
     border-radius: var(--border-radius-small);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.image-modal-footer {
-    padding: 20px;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    justify-content: center;
+.lightbox-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(120, 120, 128, 0.2);
+    color: var(--text-color);
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+    line-height: 32px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 2010;
+    transition: background-color 0.2s;
 }
 
-.image-modal-download {
-    background: var(--accent-color);
+.lightbox-close-btn:hover {
+    background: rgba(120, 120, 128, 0.4);
+}
+
+.lightbox-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(40, 40, 40, 0.5);
     color: white;
     border: none;
-    padding: 10px 20px;
-    border-radius: var(--border-radius-small);
-    font-weight: 500;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
     cursor: pointer;
-    transition: filter 0.2s;
+    z-index: 2010;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
 }
 
-.image-modal-download:hover {
-    filter: brightness(1.1);
+.lightbox-nav-btn.prev {
+    left: -50px;
 }
 
-/* --- 移动端图片模态框优化 --- */
+.lightbox-nav-btn.next {
+    right: -50px;
+}
+
+.lightbox-nav-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+}
+
+/* 移动端优化 */
 @media (max-width: 768px) {
-    .image-modal-content {
-        max-width: 98vw;
-        max-height: 98vh;
+    .lightbox-content {
+        width: 95%;
+        height: 85%;
+    }
+
+    .lightbox-close-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 20px;
+        line-height: 32px;
+        top: 5px;
+        right: 5px;
+    }
+
+    .lightbox-nav-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
     }
     
-    .image-modal-header {
-        padding: 15px;
+    .lightbox-nav-btn.prev {
+        left: 5px;
     }
     
-    .image-modal-title {
-        font-size: 1.1em;
-        max-width: 250px;
-    }
-    
-    .image-modal-body {
-        padding: 15px;
-    }
-    
-    .image-modal-footer {
-        padding: 15px;
+    .lightbox-nav-btn.next {
+        right: 5px;
     }
 }
 
