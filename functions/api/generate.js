@@ -31,18 +31,15 @@ export async function onRequest(context) {
       });
     }
 
-    // This is the key fix: We must explicitly ask the API for an IMAGE response modality.
+    // FINAL, CORRECTED request body. The API requires BOTH 'messages' and 'generationConfig'.
     const forwardBody = {
       model: body.model || 'vertexpic-gemini-2.5-flash-image-preview',
       messages: [{
         role: "user",
         content: body.prompt
       }],
-      "generation_config": {
-        "responseModalities": [
-          "TEXT",
-          "IMAGE"
-        ]
+      generationConfig: {
+        responseModalities: ["IMAGE", "TEXT"]
       }
     };
 
@@ -68,11 +65,11 @@ export async function onRequest(context) {
     let imageUrl = null;
 
     if (responseData.choices && responseData.choices.length > 0) {
-      const messageContent = responseData.choices?.message?.content;
+      const messageContent = responseData.choices[0]?.message?.content;
       if (messageContent) {
         const dataUriMatch = messageContent.match(/data:image\/[a-zA-Z]+;base64,[^"'\s]+/);
         if (dataUriMatch) {
-          imageUrl = dataUriMatch;
+          imageUrl = dataUriMatch[0];
         }
       }
     }
