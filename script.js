@@ -106,8 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 图片代理函数 ---
     function getProxiedImageUrl(originalUrl) {
-        // 检查是否为GitHub raw URL
-        if (originalUrl && originalUrl.includes('raw.githubusercontent.com')) {
+        // 检查是否为GitHub raw URL或其他外部URL
+        if (originalUrl && (originalUrl.includes('raw.githubusercontent.com') || originalUrl.includes('github.com') || originalUrl.includes('githubusercontent.com'))) {
+            return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+        }
+        // 对于其他HTTP/HTTPS URL，也使用代理
+        if (originalUrl && (originalUrl.startsWith('http://') || originalUrl.startsWith('https://'))) {
             return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
         }
         return originalUrl;
@@ -592,11 +596,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateTemplateFavoriteIcon() {
         const example = currentExamples[currentIndexOnPage];
-        if (example) updateFavoriteIcon(favoriteTemplateBtn, example);
+        const btn = document.getElementById('favorite-template-btn');
+        if (example && btn) updateFavoriteIcon(btn, example);
     }
     
     function updateResultFavoriteIcon() {
-        if (currentGeneratedImage) updateFavoriteIcon(favoriteResultBtn, currentGeneratedImage);
+        const btn = document.getElementById('favorite-result-btn');
+        if (currentGeneratedImage && btn) updateFavoriteIcon(btn, currentGeneratedImage);
     }
 
     function loadFavorites() {
@@ -604,30 +610,192 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupEventListeners() {
-        if (favoriteTemplateBtn) {
-            favoriteTemplateBtn.addEventListener('click', () => {
+        // 重新绑定收藏模板按钮 - 强制重新绑定
+        const templateBtn = document.getElementById('favorite-template-btn');
+        if (templateBtn) {
+            // 移除所有现有监听器
+            templateBtn.replaceWith(templateBtn.cloneNode(true));
+            const newTemplateBtn = document.getElementById('favorite-template-btn');
+            
+            newTemplateBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Template favorite button clicked');
                 const example = currentExamples[currentIndexOnPage];
                 if (example) {
+                    console.log('Toggling favorite for template:', example);
                     toggleFavorite({ ...example, id: example.id || example.title }, 'template');
-                    updateFavoriteIcon(favoriteTemplateBtn, example);
+                    updateFavoriteIcon(newTemplateBtn, example);
                 }
             });
         }
-        if (favoriteResultBtn) {
-            favoriteResultBtn.addEventListener('click', () => {
+
+        // 重新绑定收藏结果按钮
+        const resultBtn = document.getElementById('favorite-result-btn');
+        if (resultBtn) {
+            resultBtn.replaceWith(resultBtn.cloneNode(true));
+            const newResultBtn = document.getElementById('favorite-result-btn');
+            
+            newResultBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Result favorite button clicked');
                 if (currentGeneratedImage) {
+                    console.log('Toggling favorite for result:', currentGeneratedImage);
                     toggleFavorite(currentGeneratedImage, 'result');
-                    updateFavoriteIcon(favoriteResultBtn, currentGeneratedImage);
+                    updateFavoriteIcon(newResultBtn, currentGeneratedImage);
                 }
             });
         }
-        if(favoriteHistoryDetailBtn) {
-            favoriteHistoryDetailBtn.addEventListener('click', () => {
+
+        // 绑定发送到图生图按钮 - 生成结果
+        const sendToImg2ImgBtn = document.getElementById('send-to-img2img-btn');
+        if (sendToImg2ImgBtn) {
+            sendToImg2ImgBtn.replaceWith(sendToImg2ImgBtn.cloneNode(true));
+            const newSendBtn = document.getElementById('send-to-img2img-btn');
+            
+            newSendBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send to img2img button clicked');
+                if (currentGeneratedImage && currentGeneratedImage.src) {
+                    sendImageToImg2Img(currentGeneratedImage.src);
+                }
+            });
+        }
+
+        // 重新绑定历史详情收藏按钮
+        const historyBtn = document.getElementById('favorite-history-detail-btn');
+        if(historyBtn) {
+            historyBtn.replaceWith(historyBtn.cloneNode(true));
+            const newHistoryBtn = document.getElementById('favorite-history-detail-btn');
+            
+            newHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('History detail favorite button clicked');
                 if (currentItemInDetailView) {
-                    toggleFavorite(currentItemInDetailView, 'detail');  // 保持为'detail'类型，这样会正确更新图标
+                    console.log('Toggling favorite for history detail:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
                 }
             });
         }
+
+        // 绑定发送到图生图按钮 - 历史详情
+        const sendHistoryToImg2ImgBtn = document.getElementById('send-history-to-img2img-btn');
+        if(sendHistoryToImg2ImgBtn) {
+            sendHistoryToImg2ImgBtn.replaceWith(sendHistoryToImg2ImgBtn.cloneNode(true));
+            const newSendHistoryBtn = document.getElementById('send-history-to-img2img-btn');
+            
+            newSendHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send history to img2img button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    // 关闭历史详情模态框
+                    closeModal(historyDetailModal);
+                }
+            });
+        }
+    }
+
+    // 发送图片到图生图功能
+    function sendImageToImg2Img(imageSrc) {
+        console.log('Sending image to img2img:', imageSrc);
+        
+        // 切换到图生图标签
+        const tabImageToImage = document.getElementById('tab-image-to-image');
+        const imageToImagePanel = document.getElementById('image-to-image-panel');
+        const textToImagePanel = document.getElementById('text-to-image-panel');
+        
+        if (tabImageToImage && imageToImagePanel && textToImagePanel) {
+            // 切换标签
+            switchTab(tabImageToImage, imageToImagePanel);
+            
+            // 将图片添加到上传文件列表
+            fetch(imageSrc)
+                .then(response => response.blob())
+                .then(blob => {
+                    // 创建File对象
+                    const file = new File([blob], `image_${Date.now()}.png`, { type: 'image/png' });
+                    const reader = new FileReader();
+                    
+                    reader.onload = (e) => {
+                        // 清空现有的上传文件
+                        uploadedFiles.length = 0;
+                        
+                        // 添加新图片到上传文件列表
+                        uploadedFiles.push({
+                            file: file,
+                            dataUrl: e.target.result
+                        });
+                        
+                        // 重新渲染上传预览
+                        renderUploadPreviews();
+                        
+                        // 显示成功提示
+                        showNotification('图片已发送到图生图！', 'success');
+                        
+                        console.log('Image successfully added to img2img');
+                    };
+                    
+                    reader.onerror = () => {
+                        console.error('Failed to read image data');
+                        showNotification('发送图片失败，请重试', 'error');
+                    };
+                    
+                    reader.readAsDataURL(file);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch image:', error);
+                    showNotification('发送图片失败，请重试', 'error');
+                });
+        }
+    }
+
+    // 显示通知功能
+    function showNotification(message, type = 'info') {
+        // 创建通知元素
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#007aff'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            font-size: 14px;
+            max-width: 300px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        `;
+        notification.textContent = message;
+        
+        // 添加到页面
+        document.body.appendChild(notification);
+        
+        // 显示动画
+        setTimeout(() => {
+            notification.style.opacity = '1';
+            notification.style.transform = 'translateX(0)';
+        }, 100);
+        
+        // 3秒后自动消失
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
 
     // --- 下载功能 ---
