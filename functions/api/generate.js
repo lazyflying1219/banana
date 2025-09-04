@@ -31,10 +31,29 @@ export async function onRequest(context) {
       });
     }
 
-    // 构建请求体 - 支持多种API格式
-    let forwardBody;
-    
-    // 如果有上传的图片，使用多模态格式
+    // 尝试多种API格式，模拟CherryStudio的请求方式
+    const modelName = body.model || 'vertexpic-gemini-2.5-flash-image-preview';
+
+    // 格式1: 标准OpenAI格式
+    let forwardBody = {
+      model: modelName,
+      messages: [{
+        role: "user",
+        content: body.prompt
+      }],
+      max_tokens: 4096,
+      temperature: 0.7,
+      stream: false
+    };
+
+    // 格式2: 如果是Gemini模型，添加特殊配置
+    if (modelName.includes('gemini')) {
+      forwardBody.generationConfig = {
+        responseModalities: ["IMAGE", "TEXT"]
+      };
+    }
+
+    // 格式3: 如果有图片，使用多模态格式
     if (body.images && body.images.length > 0) {
       const content = [
         {
@@ -42,8 +61,7 @@ export async function onRequest(context) {
           text: body.prompt
         }
       ];
-      
-      // 添加图片内容
+
       body.images.forEach(imageData => {
         content.push({
           type: "image_url",
@@ -52,35 +70,17 @@ export async function onRequest(context) {
           }
         });
       });
-      
-      forwardBody = {
-        model: body.model || 'vertexpic-gemini-2.5-flash-image-preview',
-        messages: [{
-          role: "user",
-          content: content
-        }],
-        max_tokens: 4096,
-        temperature: 0.7
-      };
-    } else {
-      // 纯文本生图
-      forwardBody = {
-        model: body.model || 'vertexpic-gemini-2.5-flash-image-preview',
-        messages: [{
-          role: "user",
-          content: body.prompt
-        }],
-        max_tokens: 4096,
-        temperature: 0.7
-      };
+
+      forwardBody.messages[0].content = content;
     }
-    
-    // 如果模型支持，添加生成配置
-    if (body.model && body.model.includes('gemini')) {
-      forwardBody.generationConfig = {
-        responseModalities: ["IMAGE", "TEXT"]
-      };
-    }
+
+    // 添加调试信息到响应中
+    const debugInfo = {
+      requestModel: modelName,
+      hasImages: !!(body.images && body.images.length > 0),
+      promptLength: body.prompt ? body.prompt.length : 0,
+      timestamp: new Date().toISOString()
+    };
 
     const apiResponse = await fetch('https://veloe.onrender.com/v1/chat/completions', {
       method: 'POST',
@@ -93,7 +93,22 @@ export async function onRequest(context) {
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      return new Response(JSON.stringify({ error: 'Upstream API error', details: errorText }), {
+      let errorDetails;
+
+      try {
+        errorDetails = JSON.parse(errorText);
+      } catch {
+        errorDetails = { rawError: errorText };
+      }
+
+      return new Response(JSON.stringify({
+        error: `API请求失败 (HTTP ${apiResponse.status})`,
+        status: apiResponse.status,
+        statusText: apiResponse.statusText,
+        details: errorDetails,
+        requestBody: forwardBody,
+        apiUrl: 'https://veloe.onrender.com/v1/chat/completions'
+      }), {
         status: apiResponse.status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
@@ -108,16 +123,16 @@ export async function onRequest(context) {
     if (responseData.choices && responseData.choices.length > 0) {
       const choice = responseData.choices[0];
       const messageContent = choice?.message?.content;
-      
+
       if (typeof messageContent === 'string') {
         responseText = messageContent;
-        
+
         // 方法1: 查找base64图片数据
         const dataUriMatch = messageContent.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=]+/);
         if (dataUriMatch) {
           imageUrl = dataUriMatch[0];
         }
-        
+
         // 方法2: 查找图片URL
         if (!imageUrl) {
           const urlMatch = messageContent.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|gif|webp)/i);
@@ -125,7 +140,7 @@ export async function onRequest(context) {
             imageUrl = urlMatch[0];
           }
         }
-        
+
         // 方法3: 查找markdown格式的图片
         if (!imageUrl) {
           const markdownMatch = messageContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/);
@@ -159,11 +174,19 @@ export async function onRequest(context) {
     }
 
     if (!imageUrl) {
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: 'API响应中未找到图片数据',
         details: '请检查API配置和模型是否支持图片生成',
+        debugInfo: debugInfo,
+        requestBody: forwardBody,
         rawResponse: responseData,
-        responseText: responseText
+        responseText: responseText,
+        suggestions: [
+          '1. 检查模型名称是否正确',
+          '2. 确认API密钥有效',
+          '3. 验证提示词是否包含生图指令',
+          '4. 检查API服务是否正常运行'
+        ]
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -183,7 +206,13 @@ export async function onRequest(context) {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'An internal server error occurred.', details: err.message }), {
+    return new Response(JSON.stringify({
+      error: '服务器内部错误',
+      details: err.message,
+      stack: err.stack,
+      requestBody: body,
+      timestamp: new Date().toISOString()
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
