@@ -148,14 +148,13 @@
                 <button id="close-modal-btn" class="icon-button">&times;</button>
             </div>
             <div class="modal-body">
-                <p>配置您的API密钥和其他偏好设置</p>
-                <label for="api-url">API URL</label>
-                <input type="text" id="api-url" name="api-url" value="/api/generate" placeholder="/api/generate">
-                <label for="model-name">Model Name</label>
-                <input type="text" id="model-name" name="model-name" value="vertexpic-gemini-2.5-flash-image-preview" placeholder="vertexpic-gemini-2.5-flash-image-preview">
+                <p>配置图片生成模型和其他偏好设置</p>
+                <label for="model-name">生成模型</label>
+                <input type="text" id="model-name" name="model-name" value="vertexpic-gemini-2.5-flash-image-preview" placeholder="vertexpic-gemini-2.5-flash-image-preview" readonly style="background-color: rgba(120,120,128,0.05); cursor: not-allowed;">
+                <small style="color: var(--text-color-secondary); font-size: 0.8em; margin-top: 5px; display: block;">当前使用后端集成的Gemini模型</small>
                 
                 <div style="margin-top: 20px; padding: 15px; background: rgba(120,120,128,0.1); border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0;">常用配置</h4>
+                    <h4 style="margin: 0 0 10px 0;">常用模型</h4>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;">
                         <button class="preset-btn" data-model="vertexpic-gemini-2.5-flash-image-preview">Gemini Flash</button>
                         <button class="preset-btn" data-model="dall-e-3">DALL-E 3</button>
@@ -163,9 +162,17 @@
                         <button class="preset-btn" data-model="stable-diffusion">Stable Diffusion</button>
                     </div>
                     
-                    <h4 style="margin: 15px 0 10px 0;">API 测试</h4>
-                    <button id="test-api-btn" class="secondary-button" style="width: 100%; margin-bottom: 10px;">测试 API 连接</button>
+                    <h4 style="margin: 15px 0 10px 0;">连接测试</h4>
+                    <button id="test-api-btn" class="secondary-button" style="width: 100%; margin-bottom: 10px;">测试图片生成</button>
                     <div id="api-test-result" style="font-size: 0.85em; color: var(--text-color-secondary);"></div>
+                </div>
+                
+                <div style="margin-top: 15px; padding: 15px; background: rgba(0, 122, 255, 0.1); border-radius: 8px; font-size: 0.85em;">
+                    <strong>🔧 系统配置：</strong><br>
+                    • API端点：<code>/api/generate</code> (后端集成)<br>
+                    • 模型：Gemini 2.5 Flash Image Preview<br>
+                    • 状态：自动配置，无需手动设置<br><br>
+                    <strong>💡 提示：</strong> 如遇到问题，请使用下方的连接测试功能。
                 </div>
             </div>
             <div class="modal-footer">
