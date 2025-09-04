@@ -35,17 +35,8 @@ export async function onRequest(context) {
     const modelName = body.model || 'vertexpic-gemini-2.5-flash-image-preview';
 
     // 为生图优化提示词
-    let optimizedPrompt = body.prompt;
-    if (modelName.includes('gemini') || modelName.includes('image')) {
-      // 如果提示词没有明确要求生成图片，则添加指令
-      if (!optimizedPrompt.toLowerCase().includes('generate') &&
-        !optimizedPrompt.toLowerCase().includes('create') &&
-        !optimizedPrompt.toLowerCase().includes('draw') &&
-        !optimizedPrompt.toLowerCase().includes('生成') &&
-        !optimizedPrompt.toLowerCase().includes('画')) {
-        optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
-      }
-    }
+    // 根据用户要求，始终在提示词前添加指令以强制图片生成
+    const optimizedPrompt = `Generate an image: ${body.prompt}`;
 
     // 格式1: 针对Veloera/Gemini优化的格式
     let forwardBody = {
