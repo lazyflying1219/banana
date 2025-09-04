@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- (REMOVED) Scroll event handler is no longer needed ---
 
     // --- 通用函数 ---
+    // getStorage/setStorage are now only used for 'favorites'. History uses IndexedDB.
     const getStorage = (key) => JSON.parse(localStorage.getItem(key)) || [];
     const setStorage = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 
@@ -300,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
  
      // --- 图片生成与展示 (无跳动优化) ---
-     function displayImage(imageData) {
+     async function displayImage(imageData) {
          imageDisplay.innerHTML = ''; // Clear previous content
         let currentImg = document.createElement('img');
         
@@ -338,7 +339,9 @@ document.addEventListener('DOMContentLoaded', () => {
         imageActions.classList.remove('hidden');
         currentGeneratedImage = { ...imageData, id: imageData.id || Date.now() };
         updateResultFavoriteIcon();
-        addToHistory(currentGeneratedImage);
+        
+        // 使用新的数据库函数异步添加到历史记录
+        await addToHistory(currentGeneratedImage);
     }
 
     async function generateImage() {
@@ -522,68 +525,58 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 历史记录 ---
-    function addToHistory(imageData) {
-        let history = getStorage('history');
-        
-        // 添加时间戳
-        const historyItem = {
-            ...imageData,
-            timestamp: Date.now(),
-            id: imageData.id || Date.now()
-        };
-        
-        // 检查是否已存在（基于prompt和src）
-        const existingIndex = history.findIndex(item => 
-            item.prompt === historyItem.prompt && item.src === historyItem.src
-        );
-        
-        if (existingIndex > -1) {
-            // 更新现有项目的时间戳
-            history[existingIndex].timestamp = historyItem.timestamp;
-            // 移到最前面
-            const [updatedItem] = history.splice(existingIndex, 1);
-            history.unshift(updatedItem);
-        } else {
-            // 添加新项目
-            history.unshift(historyItem);
+    // --- 历史记录 (IndexedDB版本) ---
+    async function addToHistory(imageData) {
+        try {
+            console.log("Creating thumbnail for history...");
+            const thumbnail = await createThumbnail(imageData.src);
+            
+            const historyItem = {
+                prompt: imageData.prompt,
+                model: imageData.model,
+                src: imageData.src, // 保存原始Base64
+                thumbnail: thumbnail, // 保存缩略图
+                timestamp: Date.now()
+            };
+
+            await addToHistoryDB(historyItem);
+            console.log("Successfully added to history DB.");
+
+        } catch (error) {
+            console.error('Failed to add to history:', error);
         }
-        
-        // 限制历史记录数量
-        if (history.length > 100) {
-            history = history.slice(0, 100);
-        }
-        
-        setStorage('history', history);
     }
 
-    function loadHistory() {
-        renderGrid(historyGrid, getStorage('history'), '暂无历史记录', 'history');
+    async function loadHistory() {
+        try {
+            const historyItems = await getHistoryDB();
+            renderGrid(historyGrid, historyItems, '暂无历史记录', 'history');
+        } catch (error) {
+            console.error('Failed to load history:', error);
+            historyGrid.innerHTML = '<p>无法加载历史记录。</p>';
+        }
     }
 
     // --- 通用网格渲染 ---
     // 删除收藏或历史记录项
-    function deleteItem(itemId, type) {
+    async function deleteItem(itemId, type) {
         if (!confirm('确定要删除这个项目吗？')) return;
         
-        const storageKey = type === 'favorites' ? 'favorites' : 'history';
-        let items = getStorage(storageKey);
-        items = items.filter(item => item.id !== itemId);
-        setStorage(storageKey, items);
-        
-        // 重新加载网格
         if (type === 'favorites') {
+            let items = getStorage('favorites');
+            items = items.filter(item => item.id !== itemId);
+            setStorage('favorites', items);
             loadFavorites();
         } else {
-            loadHistory();
+            await deleteFromHistoryDB(itemId);
+            loadHistory(); // 重新加载
         }
     }
 
     // 清空所有历史记录
-    function clearAllHistory() {
+    async function clearAllHistory() {
         if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) return;
-        
-        setStorage('history', []);
+        await clearHistoryDB();
         loadHistory();
     }
 
@@ -618,7 +611,8 @@ document.addEventListener('DOMContentLoaded', () => {
             clearBtn.className = 'clear-all-btn';
             clearBtn.style.cssText = 'background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.85em; cursor: pointer;';
             clearBtn.textContent = type === 'favorites' ? '清空收藏' : '清空历史';
-            clearBtn.addEventListener('click', () => {
+            clearBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (type === 'favorites') {
                     clearAllFavorites();
                 } else {
@@ -655,7 +649,8 @@ document.addEventListener('DOMContentLoaded', () => {
             gridItem.style.position = 'relative';
             
             const img = document.createElement('img');
-            const imgSrc = item.thumbnail || item.src || '';
+            // 历史记录优先使用缩略图，收藏夹使用旧逻辑
+            const imgSrc = type === 'history' ? item.thumbnail : (item.thumbnail || item.src || '');
             img.src = getProxiedImageUrl(imgSrc);
             img.alt = 'Image';
             img.loading = 'lazy';
@@ -697,12 +692,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // 删除事件
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                deleteItem(item.id, type);
+                // 注意：历史记录的ID是自增的，收藏夹的ID是别的
+                const itemId = type === 'history' ? item.id : (item.id || item.title || item.src);
+                deleteItem(itemId, type);
             });
             
             // 点击图片查看
             img.addEventListener('click', () => {
-                displayImage({ src: getProxiedImageUrl(imgSrc), prompt: item.prompt, id: item.id });
+                // 历史记录使用原始src，收藏夹使用imgSrc
+                const fullSrc = type === 'history' ? item.src : imgSrc;
+                displayImage({ src: getProxiedImageUrl(fullSrc), prompt: item.prompt, id: item.id });
                 closeModal(favoritesModal);
                 closeModal(historyModal);
             });
