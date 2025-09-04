@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentGeneratedImage = null;
     let uploadedFiles = []; // { file: File, dataUrl:string }
     let currentLightboxIndex = 0;
+    let currentItemInDetailView = null; // 用于详情视图的状态管理
 
     // --- (REMOVED) Scroll event handler is no longer needed ---
 
@@ -186,24 +187,38 @@ document.addEventListener('DOMContentLoaded', () => {
             thumbItem.dataset.id = example.id || example.title;
 
             // 智能处理缩略图：区分图片URL和HTML图标
-            if (example.thumbnail.startsWith('http') || example.thumbnail.startsWith('data:image')) {
+            if (example.thumbnail && (example.thumbnail.startsWith('http') || example.thumbnail.startsWith('data:image') || example.thumbnail.startsWith('/'))) {
                 const img = document.createElement('img');
                 img.alt = example.title;
                 img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4='; // Placeholder
                 img.dataset.src = getProxiedImageUrl(example.thumbnail);
                 img.onerror = function() {
-                    if (this.src.startsWith('http')) { // Only log error for real URLs
+                    if (this.dataset.src && (this.dataset.src.startsWith('http') || this.dataset.src.startsWith('/'))) {
                         console.warn(`缩略图加载失败: ${this.dataset.src}`);
+                        // 加载失败时显示默认图标
+                        this.style.display = 'none';
+                        const iconDiv = document.createElement('div');
+                        iconDiv.innerHTML = '🖼️';
+                        iconDiv.style.cssText = 'display: flex; align-items: center; justify-content: center; width: 85px; height: 85px; font-size: 2em; background-color: var(--bg-color); border-radius: var(--border-radius-small);';
+                        this.parentNode.appendChild(iconDiv);
                     }
                 };
                 thumbItem.appendChild(img);
-            } else {
-                // 如果不是URL，则直接渲染HTML内容
+            } else if (example.thumbnail) {
+                // 如果不是URL，则直接渲染HTML内容（图标等）
                 thumbItem.innerHTML = example.thumbnail;
                 thumbItem.style.display = 'flex';
                 thumbItem.style.alignItems = 'center';
                 thumbItem.style.justifyContent = 'center';
-                thumbItem.style.fontSize = '2em'; // Adjust icon size if needed
+                thumbItem.style.fontSize = '2em';
+                thumbItem.style.backgroundColor = 'var(--bg-color)';
+            } else {
+                // 没有缩略图时显示默认图标
+                thumbItem.innerHTML = '🖼️';
+                thumbItem.style.display = 'flex';
+                thumbItem.style.alignItems = 'center';
+                thumbItem.style.justifyContent = 'center';
+                thumbItem.style.fontSize = '2em';
                 thumbItem.style.backgroundColor = 'var(--bg-color)';
             }
 
@@ -295,16 +310,40 @@ document.addEventListener('DOMContentLoaded', () => {
         carouselPrev.disabled = currentPage === 0;
         carouselNext.disabled = currentPage >= Math.ceil(allExamples.length / itemsPerPage) - 1;
     }
-    carouselPrev.addEventListener('click', () => { if (currentPage > 0) { currentPage--; loadPage(currentPage); } });
-    carouselNext.addEventListener('click', () => { if (currentPage < Math.ceil(allExamples.length / itemsPerPage) - 1) { currentPage++; loadPage(currentPage); } });
+    // 防止重复绑定事件监听器
+    if (carouselPrev && !carouselPrev.dataset.listenerAdded) {
+        carouselPrev.addEventListener('click', () => {
+            if (currentPage > 0) {
+                currentPage--;
+                loadPage(currentPage);
+            }
+        });
+        carouselPrev.dataset.listenerAdded = 'true';
+    }
+    
+    if (carouselNext && !carouselNext.dataset.listenerAdded) {
+        carouselNext.addEventListener('click', () => {
+            if (currentPage < Math.ceil(allExamples.length / itemsPerPage) - 1) {
+                currentPage++;
+                loadPage(currentPage);
+            }
+        });
+        carouselNext.dataset.listenerAdded = 'true';
+    }
 
-    selectTemplateBtn.addEventListener('click', () => {
-        const example = currentExamples[currentIndexOnPage];
-        if (!example) return;
-        const targetTextArea = textToImagePanel.classList.contains('active') ? promptInputText : promptInputImage;
-        targetTextArea.value = example.prompt;
-        targetTextArea.focus();
-    });
+    // 防止重复绑定事件监听器
+    if (selectTemplateBtn && !selectTemplateBtn.dataset.listenerAdded) {
+        selectTemplateBtn.addEventListener('click', () => {
+            const example = currentExamples[currentIndexOnPage];
+            if (!example) return;
+            const targetTextArea = textToImagePanel.classList.contains('active') ? promptInputText : promptInputImage;
+            if (targetTextArea) {
+                targetTextArea.value = example.prompt || '';
+                targetTextArea.focus();
+            }
+        });
+        selectTemplateBtn.dataset.listenerAdded = 'true';
+    }
 
     // --- 灯箱 (Lightbox) 功能 ---
     function updateLightboxImage(index) {
@@ -347,8 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleKeydown(e) {
         if (!lightboxModal.classList.contains('hidden')) {
             if (e.key === 'Escape') closeLightbox();
-            if (e.key === 'ArrowRight') showNextImage();
-            if (e.key === 'ArrowLeft') showPrevImage();
+            // 只有在画廊模式下（currentLightboxIndex >= 0）才响应左右键
+            if (currentLightboxIndex >= 0) {
+                if (e.key === 'ArrowRight') showNextImage();
+                if (e.key === 'ArrowLeft') showPrevImage();
+            }
         }
     }
  
@@ -370,6 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 为生成的图片添加点击放大功能
         currentImg.addEventListener('click', () => {
+            // 使用lightbox的更新函数，而不是直接操作
+            currentLightboxIndex = -1; // 设置为特殊值表示单张图片模式
             lightboxImage.src = currentImg.src;
             lightboxImage.alt = currentImg.alt;
             
@@ -532,58 +576,58 @@ document.addEventListener('DOMContentLoaded', () => {
             updateTemplateFavoriteIcon();
         } else if (type === 'result') {
             updateResultFavoriteIcon();
+        } else if (type === 'detail') {
+            // 更新历史记录详情视图的收藏图标
+            updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
         }
-        // No need to update detail view icon here, it's handled on open
     }
 
-    function updateAndBindFavoriteButton(button, item, type) {
+    function updateFavoriteIcon(button, item) {
         if (!button || !item) return;
-
         const itemId = item.id || item.title || item.src;
         const favorites = getStorage('favorites');
         const isFavorited = favorites.some(fav => fav.id === itemId);
         button.classList.toggle('favorited', isFavorited);
-
-        // Clone and replace to remove old event listeners
-        const newButton = button.cloneNode(true);
-        button.parentNode.replaceChild(newButton, button);
-
-        newButton.addEventListener('click', () => {
-            toggleFavorite({ ...item, id: itemId }, type);
-             // Re-update the button state after click
-            updateAndBindFavoriteButton(newButton, item, type);
-        });
-        
-        // return the new button if needed
-        return newButton;
     }
 
     function updateTemplateFavoriteIcon() {
         const example = currentExamples[currentIndexOnPage];
-        if (example) {
-            favoriteTemplateBtn = updateAndBindFavoriteButton(favoriteTemplateBtn, example, 'template');
-        }
+        if (example) updateFavoriteIcon(favoriteTemplateBtn, example);
     }
-
+    
     function updateResultFavoriteIcon() {
-        if (currentGeneratedImage) {
-            favoriteResultBtn = updateAndBindFavoriteButton(favoriteResultBtn, currentGeneratedImage, 'result');
-        }
+        if (currentGeneratedImage) updateFavoriteIcon(favoriteResultBtn, currentGeneratedImage);
     }
 
     function loadFavorites() {
         renderGrid(favoritesGrid, getStorage('favorites'), '暂无收藏', 'favorites');
     }
-    if (favoriteTemplateBtn) {
-        favoriteTemplateBtn.addEventListener('click', () => {
-            const example = currentExamples[currentIndexOnPage];
-            if (example) toggleFavorite({ ...example, id: example.id || example.title, thumbnail: example.thumbnail }, 'template');
-        });
-    }
-    if (favoriteResultBtn) {
-        favoriteResultBtn.addEventListener('click', () => {
-            if (currentGeneratedImage) toggleFavorite(currentGeneratedImage, 'result');
-        });
+
+    function setupEventListeners() {
+        if (favoriteTemplateBtn) {
+            favoriteTemplateBtn.addEventListener('click', () => {
+                const example = currentExamples[currentIndexOnPage];
+                if (example) {
+                    toggleFavorite({ ...example, id: example.id || example.title }, 'template');
+                    updateFavoriteIcon(favoriteTemplateBtn, example);
+                }
+            });
+        }
+        if (favoriteResultBtn) {
+            favoriteResultBtn.addEventListener('click', () => {
+                if (currentGeneratedImage) {
+                    toggleFavorite(currentGeneratedImage, 'result');
+                    updateFavoriteIcon(favoriteResultBtn, currentGeneratedImage);
+                }
+            });
+        }
+        if(favoriteHistoryDetailBtn) {
+            favoriteHistoryDetailBtn.addEventListener('click', () => {
+                if (currentItemInDetailView) {
+                    toggleFavorite(currentItemInDetailView, 'detail');  // 保持为'detail'类型，这样会正确更新图标
+                }
+            });
+        }
     }
 
     // --- 下载功能 ---
@@ -612,7 +656,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: imageData.model,
                 src: imageData.src, // 保存原始Base64
                 thumbnail: thumbnail, // 保存缩略图
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                id: imageData.id || `gen_${Date.now()}` // 确保历史记录项有ID
             };
 
             await addToHistoryDB(historyItem);
@@ -775,21 +820,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 点击图片查看
             img.addEventListener('click', () => {
-                // 统一使用新的详情模态框
                 const fullSrc = type === 'history' ? item.src : (item.src || item.thumbnail);
-                const itemToView = { ...item, src: fullSrc, thumbnail: item.thumbnail || fullSrc };
-                
+                currentItemInDetailView = { ...item, src: fullSrc, id: item.id || item.title || item.src };
+
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
                 historyDetailPrompt.textContent = item.prompt;
                 
-                // 更新并绑定收藏按钮
-                updateAndBindFavoriteButton(favoriteHistoryDetailBtn, itemToView, 'detail');
+                updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
                 
-                // 设置下载按钮功能
                 downloadHistoryDetailBtn.onclick = () => {
                     const link = document.createElement('a');
                     link.href = fullSrc;
-                    link.download = `nano-banana-${type}-${item.id || Date.now()}.png`;
+                    link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -1056,13 +1098,53 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // 灯箱事件监听
-        lightboxClose.addEventListener('click', closeLightbox);
-        lightboxModal.addEventListener('click', (e) => {
-            if (e.target === lightboxModal) closeLightbox();
-        });
-        lightboxPrev.addEventListener('click', showPrevImage);
-        lightboxNext.addEventListener('click', showNextImage);
-        document.addEventListener('keydown', handleKeydown);
+        // 安全绑定灯箱事件监听器
+        if (lightboxClose && !lightboxClose.dataset.listenerAdded) {
+            lightboxClose.addEventListener('click', closeLightbox);
+            lightboxClose.dataset.listenerAdded = 'true';
+        }
+        if (lightboxModal && !lightboxModal.dataset.listenerAdded) {
+            lightboxModal.addEventListener('click', (e) => {
+                // 确保点击的是背景而不是图片或其他元素
+                if (e.target === lightboxModal) {
+                    closeLightbox();
+                }
+            });
+            lightboxModal.dataset.listenerAdded = 'true';
+        }
+        // 阻止图片和内容区域点击事件冒泡
+        if (lightboxImage && !lightboxImage.dataset.listenerAdded) {
+            lightboxImage.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            lightboxImage.dataset.listenerAdded = 'true';
+        }
+        // 获取lightbox-content元素并添加点击阻止
+        const lightboxContent = document.querySelector('.lightbox-content');
+        if (lightboxContent && !lightboxContent.dataset.listenerAdded) {
+            lightboxContent.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            lightboxContent.dataset.listenerAdded = 'true';
+        }
+        if (lightboxPrev && !lightboxPrev.dataset.listenerAdded) {
+            lightboxPrev.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showPrevImage();
+            });
+            lightboxPrev.dataset.listenerAdded = 'true';
+        }
+        if (lightboxNext && !lightboxNext.dataset.listenerAdded) {
+            lightboxNext.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showNextImage();
+            });
+            lightboxNext.dataset.listenerAdded = 'true';
+        }
+        if (!document.dataset.keydownListenerAdded) {
+            document.addEventListener('keydown', handleKeydown);
+            document.dataset.keydownListenerAdded = 'true';
+        }
     };
 
     // --- 导出功能 ---
@@ -1126,4 +1208,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initialize();
+    setupEventListeners();
 });
