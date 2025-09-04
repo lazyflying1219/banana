@@ -326,19 +326,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('API 生成失败:', error);
-            let errorMessage = '生成失败，请重试';
             
-            if (error.error) {
-                errorMessage = error.error;
-            } else if (error.message) {
-                errorMessage = error.message;
+            // 详细的错误信息用于调试
+            let errorDetails = {
+                message: error.message || '未知错误',
+                stack: error.stack || '无堆栈信息',
+                name: error.name || '未知错误类型',
+                error: error.error || null,
+                details: error.details || null,
+                rawResponse: error.rawResponse || null,
+                responseText: error.responseText || null
+            };
+            
+            // 如果是网络错误，添加更多信息
+            if (error instanceof TypeError && error.message.includes('fetch')) {
+                errorDetails.networkError = true;
+                errorDetails.suggestion = '请检查网络连接和API地址';
             }
+            
+            let displayMessage = error.error || error.message || '生成失败，请重试';
             
             const errorDiv = document.createElement('div');
             errorDiv.className = 'error-message';
+            errorDiv.style.textAlign = 'left';
             
             const errorP = document.createElement('p');
-            errorP.textContent = `❌ ${errorMessage}`;
+            errorP.textContent = `❌ ${displayMessage}`;
+            
+            // 添加详细调试信息
+            const debugInfo = document.createElement('details');
+            debugInfo.style.marginTop = '15px';
+            debugInfo.innerHTML = `
+                <summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px;">🔍 调试信息 (点击展开)</summary>
+                <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails, null, 2)}</pre>
+            `;
             
             const retryBtn = document.createElement('button');
             retryBtn.className = 'retry-btn';
@@ -346,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
             retryBtn.addEventListener('click', generateImage);
             
             errorDiv.appendChild(errorP);
+            errorDiv.appendChild(debugInfo);
             errorDiv.appendChild(retryBtn);
             imageDisplay.innerHTML = '';
             imageDisplay.appendChild(errorDiv);
@@ -780,6 +802,62 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     themeBtn.addEventListener('click', toggleTheme);
+
+    // --- 预设配置 ---
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const model = btn.dataset.model;
+            if (modelNameInput) {
+                modelNameInput.value = model;
+            }
+        });
+    });
+
+    // --- API 测试功能 ---
+    const testApiBtn = document.getElementById('test-api-btn');
+    const apiTestResult = document.getElementById('api-test-result');
+    
+    if (testApiBtn && apiTestResult) {
+        testApiBtn.addEventListener('click', async () => {
+            const originalText = testApiBtn.textContent;
+            testApiBtn.textContent = '测试中...';
+            testApiBtn.disabled = true;
+            apiTestResult.innerHTML = '<div style="color: #007aff;">🔄 正在测试API连接...</div>';
+            
+            try {
+                const response = await fetch(apiUrlInput.value, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        prompt: '测试图片生成：一只可爱的小猫', 
+                        model: modelNameInput.value 
+                    }),
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.src) {
+                    apiTestResult.innerHTML = '<div style="color: #28a745;">✅ API连接成功！图片生成正常</div>';
+                } else {
+                    apiTestResult.innerHTML = `
+                        <div style="color: #dc3545;">❌ API测试失败</div>
+                        <details style="margin-top: 10px;">
+                            <summary style="cursor: pointer;">查看详细错误</summary>
+                            <pre style="background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; font-size: 11px; margin-top: 5px; overflow-x: auto;">${JSON.stringify(result, null, 2)}</pre>
+                        </details>
+                    `;
+                }
+            } catch (error) {
+                apiTestResult.innerHTML = `
+                    <div style="color: #dc3545;">❌ 网络错误: ${error.message}</div>
+                    <div style="margin-top: 5px; font-size: 0.8em;">请检查API地址是否正确</div>
+                `;
+            }
+            
+            testApiBtn.textContent = originalText;
+            testApiBtn.disabled = false;
+        });
+    }
 
     // --- 设置保存 ---
     const saveSettingsBtn = document.getElementById('save-settings-btn');
