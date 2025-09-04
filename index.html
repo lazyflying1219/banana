@@ -153,6 +153,20 @@
                 <input type="text" id="api-url" name="api-url" value="/api/generate" placeholder="/api/generate">
                 <label for="model-name">Model Name</label>
                 <input type="text" id="model-name" name="model-name" value="vertexpic-gemini-2.5-flash-image-preview" placeholder="vertexpic-gemini-2.5-flash-image-preview">
+                
+                <div style="margin-top: 20px; padding: 15px; background: rgba(120,120,128,0.1); border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0;">常用配置</h4>
+                    <div style="display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <button class="preset-btn" data-model="vertexpic-gemini-2.5-flash-image-preview">Gemini Flash</button>
+                        <button class="preset-btn" data-model="dall-e-3">DALL-E 3</button>
+                        <button class="preset-btn" data-model="midjourney">Midjourney</button>
+                        <button class="preset-btn" data-model="stable-diffusion">Stable Diffusion</button>
+                    </div>
+                    
+                    <h4 style="margin: 15px 0 10px 0;">API 测试</h4>
+                    <button id="test-api-btn" class="secondary-button" style="width: 100%; margin-bottom: 10px;">测试 API 连接</button>
+                    <div id="api-test-result" style="font-size: 0.85em; color: var(--text-color-secondary);"></div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="save-settings-btn" class="primary-button">保存设置</button>
