@@ -1092,6 +1092,24 @@ textarea:focus-visible {
     border-top: 1px solid var(--border-color);
 }
 
+/* --- 预设按钮 --- */
+.preset-btn {
+    background: rgba(120, 120, 128, 0.2);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-btn:hover {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+}
+
 /* --- 移动端优化 --- */
 @media (max-width: 768px) {
     .grid-actions {
@@ -1107,6 +1125,11 @@ textarea:focus-visible {
     
     .grid-item:hover .delete-item-btn {
         opacity: 1;
+    }
+    
+    .preset-btn {
+        flex: 1;
+        min-width: 80px;
     }
 }
 
