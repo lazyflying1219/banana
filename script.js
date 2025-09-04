@@ -104,6 +104,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     closeHistoryDetailModalBtn.addEventListener('click', () => closeModal(historyDetailModal));
 
+    // --- 图片代理函数 ---
+    function getProxiedImageUrl(originalUrl) {
+        // 如果没有URL，直接返回
+        if (!originalUrl) return originalUrl;
+        
+        // 如果是data URL，直接返回
+        if (originalUrl.startsWith('data:')) return originalUrl;
+        
+        // 如果是相对路径，直接返回
+        if (originalUrl.startsWith('/') && !originalUrl.startsWith('//')) return originalUrl;
+        
+        // 对于所有外部HTTP/HTTPS URL，都使用代理
+        if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://') || originalUrl.startsWith('//')){
+            console.log('Using proxy for URL:', originalUrl);
+            return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+        }
+        
+        return originalUrl;
+    }
 
     // --- 懒加载观察器 ---
     const lazyLoadObserver = new IntersectionObserver((entries, observer) => {
@@ -490,12 +509,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 generateBtn.textContent = '生成';
                 generateBtn.disabled = false;
                 displayImage({ src: result.src, prompt: prompt, model: modelName });
-                return; // 成功，终止函数
+                return;
+            } else {
+                throw new Error('API 返回数据中未找到图片');
             }
-            
-            // 如果成功响应中没有 src，也视为可重试的错误
-            console.warn('API a响应成功但未返回图片，准备重试...');
-            throw new Error('API did not return an image source');
 
         } catch (error) {
             console.error(`API 生成失败 (尝试 ${retryCount + 1}/${maxRetries + 1}):`, error);
@@ -722,6 +739,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Send to img2img button clicked');
                 if (currentGeneratedImage && currentGeneratedImage.src) {
                     sendImageToImg2Img(currentGeneratedImage.src);
+                }
+            });
+        }
+
+        // 重新绑定历史详情收藏按钮
+        const historyBtn = document.getElementById('favorite-history-detail-btn');
+        if(historyBtn) {
+            historyBtn.replaceWith(historyBtn.cloneNode(true));
+            const newHistoryBtn = document.getElementById('favorite-history-detail-btn');
+            
+            newHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('History detail favorite button clicked');
+                if (currentItemInDetailView) {
+                    console.log('Toggling favorite for history detail:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
+                }
+            });
+        }
+
+        // 绑定发送到图生图按钮 - 历史详情
+        const sendHistoryToImg2ImgBtn = document.getElementById('send-history-to-img2img-btn');
+        if(sendHistoryToImg2ImgBtn) {
+            sendHistoryToImg2ImgBtn.replaceWith(sendHistoryToImg2ImgBtn.cloneNode(true));
+            const newSendHistoryBtn = document.getElementById('send-history-to-img2img-btn');
+            
+            newSendHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send history to img2img button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    // 关闭历史详情模态框
+                    closeModal(historyDetailModal);
                 }
             });
         }
@@ -1084,19 +1136,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
                 historyDetailPrompt.textContent = item.prompt;
                 
-                setupHistoryDetailButtons();
+                updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
+                
+                downloadHistoryDetailBtn.onclick = () => {
+                    const link = document.createElement('a');
+                    link.href = fullSrc;
+                    link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
+
                 openModal(historyDetailModal);
             });
             
-            // 添加时间信息（仅当有时间戳时）
-            if (item.timestamp) {
+            // 添加时间信息（如果有）
+            if (item.timestamp || item.id) {
                 const timeInfo = document.createElement('div');
                 timeInfo.style.cssText = 'font-size: 0.75em; color: var(--text-color-secondary); padding: 5px 10px;';
-                const date = new Date(item.timestamp);
-                if (!isNaN(date)) {
-                    timeInfo.textContent = date.toLocaleString();
-                    gridItem.appendChild(timeInfo);
-                }
+                const date = item.timestamp ? new Date(item.timestamp) : new Date(item.id);
+                timeInfo.textContent = date.toLocaleString();
+                gridItem.appendChild(timeInfo);
             }
             
             gridItem.appendChild(img);

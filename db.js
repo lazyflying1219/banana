@@ -94,31 +94,9 @@ async function clearHistoryDB() {
     });
 }
 
-// --- 图片代理函数 ---
-function getProxiedImageUrl(originalUrl) {
-    // 如果没有URL，直接返回
-    if (!originalUrl) return originalUrl;
-    
-    // 如果是data URL，直接返回
-    if (originalUrl.startsWith('data:')) return originalUrl;
-    
-    // 如果是相对路径，直接返回
-    if (originalUrl.startsWith('/') && !originalUrl.startsWith('//')) return originalUrl;
-    
-    // 对于所有外部HTTP/HTTPS URL，都使用代理
-    if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://') || originalUrl.startsWith('//')){
-        console.log('Using proxy for URL:', originalUrl);
-        return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
-    }
-    
-    return originalUrl;
-}
-
-function createThumbnail(imageUrl) {
+function createThumbnail(base64Image) {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.crossOrigin = "Anonymous"; // 允许跨域加载图片
-        
         img.onload = () => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -153,8 +131,6 @@ function createThumbnail(imageUrl) {
             console.error("Failed to load image for thumbnail creation.", err);
             reject(err);
         };
-        
-        // 在设置src之前，先通过代理获取URL
-        img.src = getProxiedImageUrl(imageUrl);
+        img.src = base64Image;
     });
 }
