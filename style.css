@@ -666,9 +666,9 @@ html[data-theme="dark"] .main-controls .tabs button.active {
     padding: 10px;
     font-size: 0.85em;
     color: var(--text-color-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal; /* 允许文本换行 */
+    overflow-wrap: break-word; /* 在单词边界换行 */
+    text-align: left; /* 文本左对齐更易读 */
 }
 
 .hidden {

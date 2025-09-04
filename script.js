@@ -204,8 +204,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     const rect = e.currentTarget.getBoundingClientRect();
+                    const previewerHeight = galleryPreviewer.offsetHeight;
+                    const spaceBelow = window.innerHeight - rect.bottom;
+                    const spaceAbove = rect.top;
+
+                    let topPosition = window.scrollY + rect.top;
+
+                    // 如果下方空间不足，但上方空间足够，则向上显示
+                    if (spaceBelow < previewerHeight && spaceAbove > previewerHeight) {
+                        topPosition = window.scrollY + rect.bottom - previewerHeight;
+                    }
+
                     galleryPreviewer.style.left = `${rect.right + 15}px`;
-                    galleryPreviewer.style.top = `${window.scrollY + rect.top - 50}px`;
+                    galleryPreviewer.style.top = `${topPosition}px`;
                     galleryPreviewer.classList.add('visible');
 
                     const previewImages = galleryPreviewer.querySelectorAll('img');
@@ -337,11 +348,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         imageActions.classList.remove('hidden');
-        currentGeneratedImage = { ...imageData, id: imageData.id || Date.now() };
+        currentGeneratedImage = { ...imageData };
+        if (!currentGeneratedImage.id) {
+            currentGeneratedImage.id = `gen_${Date.now()}`;
+        }
         updateResultFavoriteIcon();
         
-        // 使用新的数据库函数异步添加到历史记录
-        await addToHistory(currentGeneratedImage);
+        // 如果不是从历史记录中查看，则添加到历史
+        if (!imageData.isFromHistory) {
+            await addToHistory(currentGeneratedImage);
+        }
     }
 
     async function generateImage() {
@@ -701,7 +717,8 @@ document.addEventListener('DOMContentLoaded', () => {
             img.addEventListener('click', () => {
                 // 历史记录使用原始src，收藏夹使用imgSrc
                 const fullSrc = type === 'history' ? item.src : imgSrc;
-                displayImage({ src: getProxiedImageUrl(fullSrc), prompt: item.prompt, id: item.id });
+                // 传递一个标志，表示这是从历史记录中查看的
+                displayImage({ src: getProxiedImageUrl(fullSrc), prompt: item.prompt, id: item.id, isFromHistory: type === 'history' });
                 closeModal(favoritesModal);
                 closeModal(historyModal);
             });
