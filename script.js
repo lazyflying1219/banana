@@ -37,6 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const favoritesGrid = document.getElementById('favorites-grid');
     const historyGrid = document.getElementById('history-grid');
 
+    const historyDetailModal = document.getElementById('history-detail-modal');
+    const closeHistoryDetailModalBtn = document.getElementById('close-history-detail-modal-btn');
+    const downloadHistoryDetailBtn = document.getElementById('download-history-detail-btn');
+    const historyDetailImage = document.getElementById('history-detail-image');
+    const historyDetailPrompt = document.getElementById('history-detail-prompt');
+
     const fileUploadArea = document.querySelector('.file-upload-area');
     const fileInput = document.getElementById('image-input');
     const modelNameInput = document.getElementById('model-name');
@@ -91,9 +97,10 @@ document.addEventListener('DOMContentLoaded', () => {
     closeFavoritesModalBtn.addEventListener('click', () => closeModal(favoritesModal));
     historyBtn.addEventListener('click', () => { loadHistory(); openModal(historyModal); });
     closeHistoryModalBtn.addEventListener('click', () => closeModal(historyModal));
-    [settingsModal, favoritesModal, historyModal].forEach(modal => {
+    [settingsModal, favoritesModal, historyModal, historyDetailModal].forEach(modal => {
         modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(modal); });
     });
+    closeHistoryDetailModalBtn.addEventListener('click', () => closeModal(historyDetailModal));
 
     // --- 图片代理函数 ---
     function getProxiedImageUrl(originalUrl) {
@@ -103,6 +110,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return originalUrl;
     }
+
+    // --- 懒加载观察器 ---
+    const lazyLoadObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                const src = img.dataset.src;
+                if (src) {
+                    img.src = src;
+                    img.removeAttribute('data-src');
+                }
+                observer.unobserve(img); // Unobserve after loading
+            }
+        });
+    }, { rootMargin: '0px 0px 200px 0px' }); // Start loading when image is 200px away from viewport bottom
 
     // --- 灵感画廊 (性能优化版) ---
     function updateGalleryDisplay(indexOnPage) {
@@ -164,13 +186,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const img = document.createElement('img');
             img.alt = example.title;
-            img.loading = 'lazy'; // 懒加载
+            // 使用占位符，等待懒加载
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
+            img.dataset.src = getProxiedImageUrl(example.thumbnail);
             img.onerror = function() {
-                console.warn(`缩略图加载失败: ${this.src}`);
-                this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNmMmY0ZjYiLz48cGF0aCBkPSJNNTAuNzkyOSAzMy4xMjVIMzQuMjA4M1Y0OS43MDgzSDUwLjc5MjlaTTQ2LjQxNjcgMzcuNUw0Mi4wNDgzIDQxLjg3NUwzNy42Nzg0IDM3LjVIMzUuNTYyNVY0Ny41ODMzSDQ5LjQzNzVWNDEuODc1TDQ2LjQxNjcgMzcuNVoiIGZpbGw9IiNjMmNhZDEiLz48L3N2Zz4=';
-                this.style.objectFit = 'scale-down';
+                // 仅在尝试加载真实图片时记录错误
+                if (this.src !== 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=') {
+                    console.warn(`缩略图加载失败: ${this.dataset.src}`);
+                }
             };
-            img.src = getProxiedImageUrl(example.thumbnail);
             thumbItem.appendChild(img);
 
             // 点击事件
@@ -246,6 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         thumbnailTrack.appendChild(fragment);
+        
+        // 观察所有新创建的图片以进行懒加载
+        const imagesToLoad = thumbnailTrack.querySelectorAll('img[data-src]');
+        imagesToLoad.forEach(img => {
+            lazyLoadObserver.observe(img);
+        });
+
         updateGalleryDisplay(0);
         updatePaginationButtons();
     }
@@ -354,10 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateResultFavoriteIcon();
         
-        // 如果不是从历史记录中查看，则添加到历史
-        if (!imageData.isFromHistory) {
-            await addToHistory(currentGeneratedImage);
-        }
+        // 调用addToHistory时，总假定是新生成的图片
+        await addToHistory(currentGeneratedImage);
     }
 
     async function generateImage() {
@@ -715,12 +744,24 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 点击图片查看
             img.addEventListener('click', () => {
-                // 历史记录使用原始src，收藏夹使用imgSrc
-                const fullSrc = type === 'history' ? item.src : imgSrc;
-                // 传递一个标志，表示这是从历史记录中查看的
-                displayImage({ src: getProxiedImageUrl(fullSrc), prompt: item.prompt, id: item.id, isFromHistory: type === 'history' });
-                closeModal(favoritesModal);
-                closeModal(historyModal);
+                // 统一使用新的详情模态框，不再跳转到主界面
+                const fullSrc = type === 'history' ? item.src : (item.src || item.thumbnail);
+                
+                historyDetailImage.src = getProxiedImageUrl(fullSrc);
+                historyDetailPrompt.textContent = item.prompt;
+                
+                // 设置下载按钮功能
+                downloadHistoryDetailBtn.onclick = () => {
+                    const link = document.createElement('a');
+                    link.href = fullSrc;
+                    link.download = `nano-banana-${type}-${item.id || Date.now()}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
+
+                // 不再关闭当前模态框，直接在上面打开详情
+                openModal(historyDetailModal);
             });
             
             // 添加时间信息（如果有）

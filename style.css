@@ -1306,6 +1306,65 @@ img {
     overscroll-behavior: contain;
 }
 
+/* --- 历史记录详情模态框样式 --- */
+.history-detail-content {
+    max-width: 80vw;
+    max-height: 90vh;
+}
+
+.history-detail-body {
+    display: flex;
+    gap: 20px;
+    height: calc(100% - 70px); /* 减去头高度 */
+}
+
+.history-detail-image-container {
+    flex: 2; /* 图片占2/3空间 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(120, 120, 128, 0.1);
+    border-radius: var(--border-radius-small);
+    overflow: hidden;
+}
+
+#history-detail-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.history-detail-prompt-container {
+    flex: 1; /* 提示词占1/3空间 */
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.history-detail-prompt-container h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: var(--text-color);
+}
+
+.history-detail-prompt-container p {
+    margin: 0;
+    font-size: 0.95em;
+    line-height: 1.7;
+    color: var(--text-color-secondary);
+    white-space: pre-wrap; /* 保留换行和空格 */
+    word-wrap: break-word;
+}
+
+@media (max-width: 1024px) {
+    .history-detail-body {
+        flex-direction: column;
+    }
+    .history-detail-image-container {
+        min-height: 300px;
+    }
+}
+
 #prompt-display-area {
     contain: layout style;
     overscroll-behavior: contain;
