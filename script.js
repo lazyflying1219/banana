@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let previewInterval = null;
 
     // --- 状态变量 ---
+    let selectedAspectRatio = '1:1'; // 默认比例为 1:1
     let allExamples = [];
     let currentExamples = [];
     let currentIndexOnPage = 0;
@@ -337,59 +338,94 @@ document.addEventListener('DOMContentLoaded', () => {
         return await generateImageWithRetry();
     }
 
-    async function generateImageWithRetry(retryCount = 0) {
-        const maxRetries = 3;
-        const apiUrl = '/api/generate';
-        const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
-        const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
-        const images = uploadedFiles.map(f => f.dataUrl);
+async function generateImageWithRetry(retryCount = 0) {
+    const maxRetries = 3;
+    const apiUrl = '/api/generate';
+    const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
+    const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
+    const images = uploadedFiles.map(f => f.dataUrl);
 
-        if (!prompt.trim()) {
-            alert('请输入提示词');
-            return;
-        }
+    if (!prompt.trim()) {
+        alert('请输入提示词');
+        return;
+    }
 
-        if (retryCount === 0) {
-            generateBtn.textContent = '生成中...';
-            generateBtn.disabled = true;
-            imageDisplay.innerHTML = '<div class="loading-spinner"><p>正在为您生成图片...</p><div class="spinner"></div></div>';
-            imageActions.classList.add('hidden');
-        } else {
-            const loadingText = imageDisplay.querySelector('.loading-spinner p');
-            if (loadingText) loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries})`;
-        }
+    setLoading(true);
+    let resultFound = false;
 
+    // --- 新增逻辑：加载底图 ---
+    let baseImage = null;
+    // 只有在比例不是1:1时才加载底图，因为1:1是默认行为，不需要额外操作
+    if (selectedAspectRatio !== '1:1') {
         try {
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, model: modelName, images }),
+            // 根据比例确定底图文件名 (e.g., '16:9' -> '16_9.png')
+            const ratioFileName = selectedAspectRatio.replace(':', '_') + '.png';
+            
+            // 获取底图并转换为 Base64
+            const response = await fetch(ratioFileName);
+            if (!response.ok) throw new Error(`无法加载底图: ${ratioFileName}`);
+            const blob = await response.blob();
+            baseImage = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
             });
-
-            if (!response.ok) {
-                let errorData;
-                try { errorData = await response.json(); } catch { errorData = { error: `HTTP ${response.status}: ${response.statusText}` }; }
-                throw errorData;
-            }
-
-            const result = await response.json();
-            if (result.src) {
-                generateBtn.textContent = '生成';
-                generateBtn.disabled = false;
-                displayImage({ src: result.src, prompt: prompt, model: modelName });
-            } else {
-                throw new Error('API 返回数据中未找到图片');
-            }
         } catch (error) {
-            console.error(`API 生成失败 (尝试 ${retryCount + 1}/${maxRetries + 1}):`, error);
-            if (retryCount < maxRetries) {
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000) + Math.random() * 500;
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return await generateImageWithRetry(retryCount + 1);
-            }
-            handleGenerationError(error, retryCount);
+            console.error('加载底图失败:', error);
+            handleGenerationError({ error: '加载比例底图失败，请检查文件是否存在且位于根目录。' }, 0);
+            return; // 失败后停止执行
         }
     }
+    // --- 新增逻辑结束 ---
+
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // 在请求体中添加 baseImage (如果它不是null)
+            body: JSON.stringify({ prompt, model: modelName, images, baseImage }),
+        });
+
+        if (response.status === 202) {
+            const data = await response.json();
+            const taskId = data.taskId;
+
+            const checkStatus = async () => {
+                if (resultFound) return;
+
+                const statusResponse = await fetch(`/api/generate?taskId=${taskId}`);
+                if (statusResponse.status === 200) {
+                    resultFound = true;
+                    setLoading(false);
+                    const result = await statusResponse.json();
+                    if (result.error) {
+                        handleGenerationError(result, retryCount);
+                    } else {
+                        handleGenerationSuccess(result);
+                    }
+                } else if (statusResponse.status === 202) {
+                    setTimeout(checkStatus, 2000);
+                } else {
+                    resultFound = true;
+                    setLoading(false);
+                    const errorResult = await statusResponse.json().catch(() => ({ error: `请求失败，状态码: ${statusResponse.status}` }));
+                    handleGenerationError(errorResult, retryCount);
+                }
+            };
+            setTimeout(checkStatus, 2000);
+        } else {
+            resultFound = true;
+            setLoading(false);
+            const errorResult = await response.json().catch(() => ({ error: `请求失败，状态码: ${response.status}` }));
+            handleGenerationError(errorResult, retryCount);
+        }
+    } catch (error) {
+        if (!resultFound) {
+            handleGenerationError({ error: error.message }, retryCount);
+        }
+    }
+}
 
     function handleGenerationError(error, finalRetryCount) {
         generateBtn.textContent = '生成';
@@ -402,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function toggleFavorite(item, type) {
         let favorites = getStorage('favorites');
-        const itemId = item.id || item.title || item.src; 
+        const itemId = item.id || item.title || item.src;
         if (!itemId) return;
         const existingIndex = favorites.findIndex(fav => fav.id === itemId);
         if (existingIndex > -1) {
@@ -450,6 +486,15 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             if (currentGeneratedImage?.src) sendImageToImg2Img(currentGeneratedImage.src);
         });
+
+    // 监听比例选择按钮
+    document.querySelectorAll('.ratio-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelector('.ratio-btn.active').classList.remove('active');
+            btn.classList.add('active');
+            selectedAspectRatio = btn.dataset.ratio;
+        });
+    });
     }
 
     function sendImageToImg2Img(imageSrc) {
@@ -479,26 +524,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupHistoryDetailButtons() {
+        if (!favoriteHistoryDetailBtn) return;
         favoriteHistoryDetailBtn.onclick = (e) => {
             e.stopPropagation();
             if (currentItemInDetailView) toggleFavorite(currentItemInDetailView, 'detail');
         };
-        document.getElementById('send-history-to-img2img-btn').onclick = (e) => {
-            e.stopPropagation();
-            if (currentItemInDetailView?.src) {
-                sendImageToImg2Img(currentItemInDetailView.src);
-                closeModal(historyDetailModal);
-            }
-        };
-        downloadHistoryDetailBtn.onclick = (e) => {
-            e.stopPropagation();
-            if (currentItemInDetailView?.src) {
-                const link = document.createElement('a');
-                link.href = currentItemInDetailView.src;
-                link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
-                link.click();
-            }
-        };
+        
+        const sendHistoryBtn = document.getElementById('send-history-to-img2img-btn');
+        if (sendHistoryBtn) {
+            sendHistoryBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (currentItemInDetailView?.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    closeModal(historyDetailModal);
+                }
+            };
+        }
+        
+        if (downloadHistoryDetailBtn) {
+            downloadHistoryDetailBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (currentItemInDetailView?.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    link.click();
+                }
+            };
+        }
     }
 
     document.getElementById('download-result-btn')?.addEventListener('click', () => {
