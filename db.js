@@ -1,6 +1,7 @@
 const DB_NAME = 'ImageStudioDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'history';
+const DB_VERSION = 2; // 升级版本以触发 onupgradeneeded
+const HISTORY_STORE_NAME = 'history';
+const IMAGE_CACHE_STORE_NAME = 'imageCache'; // 新增图片缓存库
 
 let db;
 
@@ -19,24 +20,101 @@ function openDB() {
 
         request.onupgradeneeded = (event) => {
             const tempDb = event.target.result;
-            if (!tempDb.objectStoreNames.contains(STORE_NAME)) {
-                tempDb.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            // 创建历史记录库
+            if (!tempDb.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+                tempDb.createObjectStore(HISTORY_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            }
+            // 创建图片缓存库
+            if (!tempDb.objectStoreNames.contains(IMAGE_CACHE_STORE_NAME)) {
+                tempDb.createObjectStore(IMAGE_CACHE_STORE_NAME, { keyPath: 'url' });
             }
         };
 
         request.onsuccess = (event) => {
             db = event.target.result;
+            cleanupImageCache(); // 打开数据库时，清理一次旧缓存
             resolve(db);
         };
     });
 }
 
+// --- Image Cache Functions ---
+
+async function saveImageToCache(url, blob) {
+    try {
+        const db = await openDB();
+        const transaction = db.transaction(IMAGE_CACHE_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(IMAGE_CACHE_STORE_NAME);
+        return new Promise((resolve, reject) => {
+            const cacheEntry = {
+                url: url,
+                data: blob,
+                timestamp: Date.now()
+            };
+            const request = store.put(cacheEntry);
+            request.onsuccess = () => resolve();
+            request.onerror = (event) => {
+                console.error("Failed to save to cache:", event.target.error);
+                reject(event.target.error);
+            };
+        });
+    } catch (error) {
+        console.error("Error accessing DB for caching:", error);
+    }
+}
+
+async function getImageFromCache(url) {
+    const db = await openDB();
+    const transaction = db.transaction(IMAGE_CACHE_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(IMAGE_CACHE_STORE_NAME);
+    return new Promise((resolve, reject) => {
+        const request = store.get(url);
+        request.onsuccess = () => {
+            if (request.result) {
+                resolve(request.result.data); // 返回缓存的Blob数据
+            } else {
+                resolve(null); // 未找到
+            }
+        };
+        request.onerror = (event) => reject(event.target.error);
+    });
+}
+
+async function cleanupImageCache(maxAgeDays = 30) {
+    try {
+        const db = await openDB();
+        const transaction = db.transaction(IMAGE_CACHE_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(IMAGE_CACHE_STORE_NAME);
+        const maxAge = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                if (cursor.value.timestamp < maxAge) {
+                    cursor.delete();
+                }
+                cursor.continue();
+            } else {
+                console.log("Image cache cleanup complete.");
+            }
+        };
+        request.onerror = (event) => {
+            console.error("Error during cache cleanup:", event.target.error);
+        };
+    } catch (error) {
+        console.error("Could not start cache cleanup:", error);
+    }
+}
+
+
+// --- History Functions ---
+
 async function addToHistoryDB(item) {
     const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
     
-    // Add a timestamp for sorting
     item.timestamp = Date.now();
 
     return new Promise((resolve, reject) => {
@@ -48,12 +126,11 @@ async function addToHistoryDB(item) {
 
 async function getHistoryDB(count = 50) {
     const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(HISTORY_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
     const items = [];
 
     return new Promise((resolve, reject) => {
-        // Open a cursor to iterate over the items in reverse order (newest first)
         const request = store.openCursor(null, 'prev');
         
         request.onsuccess = (event) => {
@@ -74,8 +151,8 @@ async function getHistoryDB(count = 50) {
 
 async function deleteFromHistoryDB(id) {
     const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
     return new Promise((resolve, reject) => {
         const request = store.delete(id);
         request.onsuccess = () => resolve();
@@ -85,8 +162,8 @@ async function deleteFromHistoryDB(id) {
 
 async function clearHistoryDB() {
     const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE_NAME);
     return new Promise((resolve, reject) => {
         const request = store.clear();
         request.onsuccess = () => resolve();
@@ -123,7 +200,6 @@ function createThumbnail(base64Image) {
             
             ctx.drawImage(img, 0, 0, width, height);
             
-            // Use WebP for better compression if available, otherwise JPEG
             const thumbnailDataUrl = canvas.toDataURL('image/webp', 0.8);
             resolve(thumbnailDataUrl);
         };
