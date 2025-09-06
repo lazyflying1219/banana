@@ -115,13 +115,26 @@ document.addEventListener('DOMContentLoaded', () => {
         // 如果是相对路径，直接返回
         if (originalUrl.startsWith('/') && !originalUrl.startsWith('//')) return originalUrl;
         
+        // 如果是blob URL，直接返回
+        if (originalUrl.startsWith('blob:')) return originalUrl;
+        
         // 对于所有外部HTTP/HTTPS URL，都使用代理
         if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://') || originalUrl.startsWith('//')){
             console.log('Using proxy for URL:', originalUrl);
             return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
         }
         
-        return originalUrl;
+        // 处理其他可能的URL格式
+        try {
+            // 尝试创建URL对象来验证是否为有效URL
+            new URL(originalUrl);
+            // 如果是有效URL，使用代理
+            console.log('Using proxy for valid URL:', originalUrl);
+            return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+        } catch (e) {
+            // 如果不是有效URL，直接返回
+            return originalUrl;
+        }
     }
 
     // --- 懒加载观察器 ---
@@ -315,6 +328,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateGalleryDisplay(0);
         updatePaginationButtons();
+        
+        // 强制重新计算布局，确保第3页之后的图片正确显示
+        setTimeout(() => {
+            // 重新触发懒加载观察器
+            const imagesToReload = thumbnailTrack.querySelectorAll('img[data-src]');
+            imagesToReload.forEach(img => {
+                if (!img.src || img.src.includes('data:image/svg+xml')) {
+                    lazyLoadObserver.observe(img);
+                }
+            });
+        }, 100);
     }
 
     function updatePaginationButtons() {
@@ -483,6 +507,39 @@ document.addEventListener('DOMContentLoaded', () => {
             if (loadingText) {
                 loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries})`;
             }
+            
+            // 添加重试进度条
+            let progressBar = imageDisplay.querySelector('.retry-progress');
+            if (!progressBar) {
+                progressBar = document.createElement('div');
+                progressBar.className = 'retry-progress';
+                progressBar.style.cssText = `
+                    width: 100%;
+                    height: 4px;
+                    background: rgba(120, 120, 128, 0.2);
+                    border-radius: 2px;
+                    margin-top: 10px;
+                    overflow: hidden;
+                `;
+                
+                const progressFill = document.createElement('div');
+                progressFill.className = 'retry-progress-fill';
+                progressFill.style.cssText = `
+                    height: 100%;
+                    background: linear-gradient(90deg, #007aff, #5856d6);
+                    border-radius: 2px;
+                    transition: width 0.3s ease;
+                    width: ${((retryCount + 1) / (maxRetries + 1)) * 100}%;
+                `;
+                
+                progressBar.appendChild(progressFill);
+                imageDisplay.querySelector('.loading-spinner').appendChild(progressBar);
+            } else {
+                const progressFill = progressBar.querySelector('.retry-progress-fill');
+                if (progressFill) {
+                    progressFill.style.width = `${((retryCount + 1) / (maxRetries + 1)) * 100}%`;
+                }
+            }
         }
 
         try {
@@ -521,9 +578,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if (retryCount < maxRetries && shouldRetry(error)) {
                 console.log(`准备进行第 ${retryCount + 1} 次重试...`);
                 
-                // 智能延迟：递增延迟时间
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s, 最大5s
-                await new Promise(resolve => setTimeout(resolve, delay));
+                // 智能延迟：递增延迟时间，添加随机性避免同步重试
+                const baseDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s, 最大5s
+                const randomDelay = Math.random() * 500; // 添加0-500ms的随机延迟
+                const totalDelay = baseDelay + randomDelay;
+                
+                // 更新UI显示倒计时
+                const loadingText = imageDisplay.querySelector('.loading-spinner p');
+                if (loadingText) {
+                    const originalText = loadingText.textContent;
+                    let countdown = Math.ceil(totalDelay / 1000);
+                    loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries}) - ${countdown}秒后重试`;
+                    
+                    const countdownInterval = setInterval(() => {
+                        countdown--;
+                        if (countdown > 0) {
+                            loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries}) - ${countdown}秒后重试`;
+                        } else {
+                            clearInterval(countdownInterval);
+                        }
+                    }, 1000);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, totalDelay));
                 
                 // 递归重试
                 return await generateImageWithRetry(retryCount + 1);
@@ -559,7 +636,25 @@ document.addEventListener('DOMContentLoaded', () => {
             'temporary',
             'rate limit',
             'service unavailable',
-            'internal server error'
+            'internal server error',
+            'gateway timeout',
+            'bad gateway',
+            'request timeout',
+            'too many requests',
+            'server error',
+            'service error',
+            'api error',
+            'temporary error',
+            'transient error',
+            'retryable error',
+            'resource busy',
+            'overloaded',
+            'unavailable',
+            'temporarily unavailable',
+            'try again',
+            'please try again',
+            'try again later',
+            'please try again later'
         ];
         
         const errorMessage = (error.message || error.error || '').toLowerCase();
@@ -599,28 +694,141 @@ document.addEventListener('DOMContentLoaded', () => {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-message';
         errorDiv.style.textAlign = 'left';
+        errorDiv.style.cssText = `
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid rgba(220, 53, 69, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 10px 0;
+            animation: shake 0.5s ease-in-out;
+        `;
+        
+        const errorHeader = document.createElement('div');
+        errorHeader.style.cssText = 'display: flex; align-items: center; margin-bottom: 15px;';
+        
+        const errorIcon = document.createElement('div');
+        errorIcon.innerHTML = '❌';
+        errorIcon.style.cssText = 'font-size: 24px; margin-right: 10px;';
+        
+        const errorTitle = document.createElement('h4');
+        errorTitle.textContent = '生成失败';
+        errorTitle.style.cssText = 'margin: 0; color: #dc3545;';
         
         const errorP = document.createElement('p');
-        errorP.textContent = `❌ ${displayMessage}`;
+        errorP.textContent = displayMessage;
+        errorP.style.cssText = 'margin: 0 0 15px 0; line-height: 1.5;';
         
-        // 添加详细调试信息
+        // 添加建议信息
+        const suggestionDiv = document.createElement('div');
+        suggestionDiv.style.cssText = 'background: rgba(0, 122, 255, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px;';
+        
+        let suggestionText = '';
+        if (errorDetails.networkError) {
+            suggestionText = '💡 建议：请检查您的网络连接是否正常，或稍后重试。';
+        } else if (error.error && error.error.includes('timeout')) {
+            suggestionText = '💡 建议：服务器响应超时，请稍后重试或简化您的提示词。';
+        } else if (error.error && error.error.includes('rate limit')) {
+            suggestionText = '💡 建议：请求过于频繁，请等待几分钟后重试。';
+        } else {
+            suggestionText = '💡 建议：请检查您的提示词或稍后重试。';
+        }
+        
+        suggestionDiv.textContent = suggestionText;
+        
+        // 添加详细调试信息（可折叠）
         const debugInfo = document.createElement('details');
         debugInfo.style.marginTop = '15px';
         debugInfo.innerHTML = `
-            <summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px;">🔍 调试信息 (点击展开)</summary>
-            <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails, null, 2)}</pre>
+            <summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px; font-weight: 500;">🔍 调试信息 (点击展开)</summary>
+            <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">${JSON.stringify(errorDetails, null, 2)}</pre>
         `;
+        
+        // 添加操作按钮
+        const actionsDiv = document.createElement('div');
+        actionsDiv.style.cssText = 'display: flex; gap: 10px; margin-top: 15px;';
         
         const retryBtn = document.createElement('button');
         retryBtn.className = 'retry-btn';
         retryBtn.textContent = '手动重试';
+        retryBtn.style.cssText = `
+            background: #007aff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        `;
         retryBtn.addEventListener('click', generateImage);
+        retryBtn.addEventListener('mouseenter', () => {
+            retryBtn.style.background = '#0056b3';
+        });
+        retryBtn.addEventListener('mouseleave', () => {
+            retryBtn.style.background = '#007aff';
+        });
         
+        const reportBtn = document.createElement('button');
+        reportBtn.className = 'report-btn';
+        reportBtn.textContent = '报告问题';
+        reportBtn.style.cssText = `
+            background: transparent;
+            color: #666;
+            border: 1px solid #ddd;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        `;
+        reportBtn.addEventListener('click', () => {
+            // 复制错误信息到剪贴板
+            navigator.clipboard.writeText(JSON.stringify(errorDetails, null, 2)).then(() => {
+                showNotification('错误信息已复制到剪贴板', 'success');
+            }).catch(() => {
+                showNotification('无法复制错误信息', 'error');
+            });
+        });
+        reportBtn.addEventListener('mouseenter', () => {
+            reportBtn.style.background = '#f8f9fa';
+            reportBtn.style.color = '#333';
+        });
+        reportBtn.addEventListener('mouseleave', () => {
+            reportBtn.style.background = 'transparent';
+            reportBtn.style.color = '#666';
+        });
+        
+        errorHeader.appendChild(errorIcon);
+        errorHeader.appendChild(errorTitle);
+        actionsDiv.appendChild(retryBtn);
+        actionsDiv.appendChild(reportBtn);
+        
+        errorDiv.appendChild(errorHeader);
         errorDiv.appendChild(errorP);
+        errorDiv.appendChild(suggestionDiv);
         errorDiv.appendChild(debugInfo);
-        errorDiv.appendChild(retryBtn);
+        errorDiv.appendChild(actionsDiv);
+        
         imageDisplay.innerHTML = '';
         imageDisplay.appendChild(errorDiv);
+        
+        // 添加震动动画
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+                20%, 40%, 60%, 80% { transform: translateX(5px); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // 自动移除动画样式
+        setTimeout(() => {
+            if (style.parentNode) {
+                style.parentNode.removeChild(style);
+            }
+        }, 1000);
     }
     generateBtn.addEventListener('click', generateImage);
 
@@ -893,6 +1101,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
                     toggleFavorite(currentItemInDetailView, 'detail');
+                    // 立即更新图标状态
+                    updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
                 }
             });
             
@@ -1147,7 +1357,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.body.removeChild(link);
                 };
 
+                // 打开模态框后重新绑定按钮事件
                 openModal(historyDetailModal);
+                
+                // 使用 setTimeout 确保模态框完全打开后再绑定事件
+                setTimeout(() => {
+                    setupHistoryDetailButtons();
+                }, 100);
             });
             
             // 添加时间信息（如果有）
