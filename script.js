@@ -342,10 +342,10 @@ async function generateImageWithRetry(retryCount = 0) {
     const maxRetries = 3;
     const apiUrl = '/api/generate';
     const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
-    const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
+    let userPrompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
     const images = uploadedFiles.map(f => f.dataUrl);
 
-    if (!prompt.trim()) {
+    if (!userPrompt.trim()) {
         alert('请输入提示词');
         return;
     }
@@ -353,15 +353,13 @@ async function generateImageWithRetry(retryCount = 0) {
     setLoading(true);
     let resultFound = false;
 
-    // --- 新增逻辑：加载底图 ---
     let baseImage = null;
-    // 只有在比例不是1:1时才加载底图，因为1:1是默认行为，不需要额外操作
+    let finalPrompt = userPrompt;
+
+    // --- 核心修改逻辑：动态构建Prompt ---
     if (selectedAspectRatio !== '1:1') {
         try {
-            // 根据比例确定底图文件名 (e.g., '16:9' -> '16_9.png')
             const ratioFileName = selectedAspectRatio.replace(':', '_') + '.png';
-            
-            // 获取底图并转换为 Base64
             const response = await fetch(ratioFileName);
             if (!response.ok) throw new Error(`无法加载底图: ${ratioFileName}`);
             const blob = await response.blob();
@@ -371,20 +369,32 @@ async function generateImageWithRetry(retryCount = 0) {
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
             });
+            
+            // 根据是否上传了用户图片来构建不同的指令
+            if (images.length > 0) {
+                // 场景二：选择了比例，且有用户上传的图片
+                const instruction = `The first image provided is the canvas. Redraw the content of the subsequent reference images onto this canvas. Adapt and expand the content from the reference images to perfectly fit the aspect ratio of the canvas. The original canvas should be completely replaced with the new creation, retaining only its aspect ratio. The user's request is: `;
+                finalPrompt = instruction + userPrompt;
+            } else {
+                // 场景一：选择了比例，但没有用户上传的图片
+                const instruction = `Please create the following content on the provided canvas, ensuring the final image strictly adheres to the canvas's aspect ratio. The user's request is: `;
+                finalPrompt = instruction + userPrompt;
+            }
+
         } catch (error) {
             console.error('加载底图失败:', error);
             handleGenerationError({ error: '加载比例底图失败，请检查文件是否存在且位于根目录。' }, 0);
-            return; // 失败后停止执行
+            return;
         }
     }
-    // --- 新增逻辑结束 ---
+    // 场景三：比例为1:1，finalPrompt 保持为 userPrompt，不作任何改变。
+    // --- 修改逻辑结束 ---
 
     try {
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            // 在请求体中添加 baseImage (如果它不是null)
-            body: JSON.stringify({ prompt, model: modelName, images, baseImage }),
+            body: JSON.stringify({ prompt: finalPrompt, model: modelName, images, baseImage }),
         });
 
         if (response.status === 202) {
