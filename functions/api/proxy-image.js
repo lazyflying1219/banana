@@ -36,7 +36,8 @@ export async function onRequest(context) {
     
     const allowedRepos = [
       'PicoTrex/Awesome-Nano-Banana-images',
-      'songguoxs/gpt4o-image-prompts'
+      'songguoxs/gpt4o-image-prompts',
+      'jamez-bondos/awesome-gpt4o-images'
     ];
 
     let targetUrl;
