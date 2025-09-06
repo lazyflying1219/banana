@@ -202,40 +202,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             thumbItem.addEventListener('click', () => openLightbox(index));
-             if (window.matchMedia('(min-width: 1025px) and (hover: hover)').matches) {
-                thumbItem.addEventListener('mouseenter', async (e) => {
-                    cleanupPreviewInterval();
-                    galleryPreviewer.innerHTML = '<div>Loading...</div>';
-                    const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
-                    if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
-                    const limitedImages = imagesToShow.slice(0, 3);
-                    const finalImageUrls = await Promise.all(limitedImages.map(url => getCachedImageOrFetch(url)));
-                    galleryPreviewer.innerHTML = '';
-                    finalImageUrls.forEach(src => {
-                        const previewImg = document.createElement('img');
-                        previewImg.src = src;
-                        previewImg.loading = 'lazy';
-                        galleryPreviewer.appendChild(previewImg);
-                    });
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    galleryPreviewer.style.left = `${rect.right + 15}px`;
-                    galleryPreviewer.style.top = `${window.scrollY + rect.top}px`;
-                    galleryPreviewer.classList.add('visible');
-                    const previewImages = galleryPreviewer.querySelectorAll('img');
-                    if (previewImages.length > 0) {
-                        let currentPreviewIndex = 0;
-                        previewImages[currentPreviewIndex].classList.add('active-preview');
-                        if (previewImages.length > 1) {
-                            previewInterval = setInterval(() => {
-                                previewImages[currentPreviewIndex]?.classList.remove('active-preview');
-                                currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
-                                previewImages[currentPreviewIndex]?.classList.add('active-preview');
-                            }, 1500);
-                        }
-                    }
-                });
-                thumbItem.addEventListener('mouseleave', cleanupGalleryPreviewer);
-             }
             fragment.appendChild(thumbItem);
         });
 
@@ -338,6 +304,61 @@ document.addEventListener('DOMContentLoaded', () => {
         return await generateImageWithRetry();
     }
 
+    function setLoading(isLoading) {
+        if (generateBtn) {
+            generateBtn.disabled = isLoading;
+            generateBtn.textContent = isLoading ? 'Generating...' : 'Generate';
+        }
+    }
+
+    function saveDraft() {
+        // Placeholder for saveDraft logic
+        console.log('Draft saved (placeholder)');
+    }
+
+    function handleGenerationSuccess(result) {
+        setLoading(false);
+        displayImage({ src: result.imageUrl, prompt: result.prompt });
+        updateGalleryListeners();
+    }
+
+    function handleGalleryItemMouseenter(e) {
+        const item = e.currentTarget;
+        const images = item.dataset.images ? JSON.parse(item.dataset.images) : [];
+        if (images.length === 0) return;
+
+        const previewer = document.createElement('div');
+        previewer.className = 'image-preview';
+        const img = document.createElement('img');
+        img.src = images[0];
+        previewer.appendChild(img);
+        document.body.appendChild(previewer);
+
+        const rect = item.getBoundingClientRect();
+        previewer.style.left = `${rect.right + 10}px`;
+        previewer.style.top = `${window.scrollY + rect.top}px`;
+        previewer.classList.add('visible');
+
+        item._previewer = previewer;
+    }
+
+    function handleGalleryItemMouseleave(e) {
+        const item = e.currentTarget;
+        if (item._previewer) {
+            item._previewer.remove();
+            item._previewer = null;
+        }
+    }
+
+    function updateGalleryListeners() {
+        document.querySelectorAll('.gallery-item').forEach(item => {
+            item.removeEventListener('mouseenter', handleGalleryItemMouseenter);
+            item.removeEventListener('mouseleave', handleGalleryItemMouseleave);
+            item.addEventListener('mouseenter', handleGalleryItemMouseenter);
+            item.addEventListener('mouseleave', handleGalleryItemMouseleave);
+        });
+    }
+
 async function generateImageWithRetry(retryCount = 0) {
     const maxRetries = 3;
     const apiUrl = '/api/generate';
@@ -412,7 +433,7 @@ async function generateImageWithRetry(retryCount = 0) {
                     if (result.error) {
                         handleGenerationError(result, retryCount);
                     } else {
-                        handleGenerationSuccess(result);
+                        handleGenerationSuccess({ ...result, prompt: userPrompt });
                     }
                 } else if (statusResponse.status === 202) {
                     setTimeout(checkStatus, 2000);
@@ -438,13 +459,11 @@ async function generateImageWithRetry(retryCount = 0) {
 }
 
     function handleGenerationError(error, finalRetryCount) {
-        generateBtn.textContent = '生成';
-        generateBtn.disabled = false;
-        let displayMessage = error.error || error.message || '生成失败，请重试';
-        if (finalRetryCount > 0) displayMessage += ` (已自动重试 ${finalRetryCount} 次)`;
-        imageDisplay.innerHTML = `<div class="error-message">❌ 生成失败: ${displayMessage}</div>`;
+        setLoading(false);
+        let displayMessage = error.error || error.message || 'Generation failed, please retry';
+        if (finalRetryCount > 0) displayMessage += ` (Retried ${finalRetryCount} times)`;
+        imageDisplay.innerHTML = `<div class="error-message">Generation failed: ${displayMessage}</div>`;
     }
-    generateBtn.addEventListener('click', generateImage);
 
     function toggleFavorite(item, type) {
         let favorites = getStorage('favorites');
@@ -497,14 +516,22 @@ async function generateImageWithRetry(retryCount = 0) {
             if (currentGeneratedImage?.src) sendImageToImg2Img(currentGeneratedImage.src);
         });
 
-    // 监听比例选择按钮
-    document.querySelectorAll('.ratio-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelector('.ratio-btn.active').classList.remove('active');
-            btn.classList.add('active');
-            selectedAspectRatio = btn.dataset.ratio;
+        // 监听比例选择按钮
+        document.querySelectorAll('.ratio-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelector('.ratio-btn.active').classList.remove('active');
+                btn.classList.add('active');
+                selectedAspectRatio = btn.dataset.ratio;
+            });
         });
-    });
+
+        // 为生成按钮绑定点击事件
+        if (generateBtn) {
+            generateBtn.addEventListener('click', () => {
+                saveDraft();
+                generateImageWithRetry();
+            });
+        }
     }
 
     function sendImageToImg2Img(imageSrc) {
