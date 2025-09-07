@@ -1048,12 +1048,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 专门为历史详情模态框绑定按钮事件
     function setupHistoryDetailButtons() {
-        // 绑定收藏按钮
+        // 绑定收藏按钮 - 使用更可靠的方式
         const favoriteBtn = document.getElementById('favorite-history-detail-btn');
         if (favoriteBtn) {
             // 移除旧的事件监听器
-            favoriteBtn.replaceWith(favoriteBtn.cloneNode(true));
-            const newFavoriteBtn = document.getElementById('favorite-history-detail-btn');
+            const newFavoriteBtn = favoriteBtn.cloneNode(true);
+            favoriteBtn.parentNode.replaceChild(newFavoriteBtn, favoriteBtn);
             
             newFavoriteBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -1062,6 +1062,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
                     toggleFavorite(currentItemInDetailView, 'detail');
+                    // 立即更新图标状态
+                    updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
                 }
             });
             
@@ -1768,8 +1770,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             console.log('Grid area button clicked:', target.id, target.className);
             
-            // 历史详情收藏按钮
-            if (target.id === 'favorite-history-detail-btn' || target.classList.contains('favorite-history-detail-btn')) {
+            // 历史详情收藏按钮 - 更精确的匹配
+            if (target.id === 'favorite-history-detail-btn' ||
+                (target.classList.contains('icon-button') && target.closest('.modal-header-actions'))) {
                 event.preventDefault();
                 event.stopPropagation();
                 console.log('History detail favorite button clicked via delegation');
