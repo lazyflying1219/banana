@@ -548,25 +548,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 新增辅助函数：将图片URL转换为Data URL ---
-    async function imageToDataUrl(url) {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`无法获取图片: ${url}, 状态: ${response.status}`);
-            }
-            const blob = await response.blob();
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
-        } catch (error) {
-            console.error("图片转换Data URL失败:", error);
-            return null;
-        }
-    }
 
     async function generateImage() {
         return await generateImageWithRetry();
@@ -580,10 +561,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 初始图片列表只包含用户上传的图片
         let images = uploadedFiles.map(f => f.dataUrl);
-
-        // 获取选中的比例配置
-        const ratioConfig = ASPECT_RATIOS[selectedRatio];
-        const baseImage = ratioConfig ? ratioConfig.baseImage : null;
 
         // 验证输入
         if (!prompt.trim()) {
@@ -605,46 +582,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout
+
         try {
-            // 构建增强的提示词
-            let enhancedPrompt = prompt;
-            const hasUserImages = uploadedFiles && uploadedFiles.length > 0;
-            const hasAspectRatioImage = baseImage && selectedRatio !== '1:1';
-
-            if (hasAspectRatioImage) {
-                let imageInstructions = "你是一位专业的图像合成师。请严格遵循以下指令：\n";
-                imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为“画布”）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
-
-                if (hasUserImages) {
-                    const userImageCount = uploadedFiles.length;
-                    imageInstructions += `- 你接收到的前 ${userImageCount} 张图片是内容源。你的任务是将这些源图片的内容、风格、元素智能地融合、重绘到空白的“画布”上，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
-                } else {
-                    imageInstructions += `- 你的任务是根据用户的文本提示词，在空白的“画布”上生成全新的内容，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
-                }
-                imageInstructions += `- 最终生成的图片必须内容完整，填满整个画布，绝不留下任何边框或空白区域。\n`;
-                enhancedPrompt = `${imageInstructions}\n用户的原始需求是：“${prompt}”`;
-
-                // 将底图转换为Data URL并添加到图片列表的末尾
-                const baseImageAsDataUrl = await imageToDataUrl(baseImage);
-                if (baseImageAsDataUrl) {
-                    images.push(baseImageAsDataUrl);
-                    console.log(`已成功将底图 ${baseImage} 作为最后一张图片添加到请求中。`);
-                } else {
-                     console.warn(`无法加载底图 ${baseImage}，将按无底图模式继续。`);
-                }
-
-            } else if (selectedRatio) {
-                const ratioConfig = ASPECT_RATIOS[selectedRatio];
-                if (hasUserImages) {
-                     enhancedPrompt = `请基于用户上传的图片，根据以下需求进行修改或重绘，最终输出一张 ${ratioConfig.description}(${selectedRatio}) 的图片。\n\n用户的需求是：“${prompt}”`;
-                } else {
-                    enhancedPrompt = `请根据用户的需求生成一张图片。最终图片的宽高比必须为 ${ratioConfig.description} (${selectedRatio})。请确保内容完整并填满整个画面，不要留有边框。\n\n用户的需求是：“${prompt}”`;
-                }
+            // 构建新的、更简单的提示词
+            let finalPrompt = prompt;
+            if (selectedRatio) {
+                finalPrompt += `\n\nPlease generate the image with an aspect ratio of ${selectedRatio}.`;
             }
             
-            // 构建请求体，不再需要单独的 baseImage 和 aspectRatio 字段
+            // 构建请求体
             const requestBody = {
-                prompt: enhancedPrompt,
+                prompt: finalPrompt,
                 model: modelName,
                 images: images,
             };
@@ -659,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody),
+                signal: controller.signal,
             });
 
             if (!response.ok) {
@@ -700,11 +651,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 所有重试都失败了，显示错误信息
             handleGenerationError(error, retryCount);
+        } finally {
+            clearTimeout(timeoutId);
         }
     }
 
     // 判断是否应该重试的函数
     function shouldRetry(error) {
+        // AbortError (timeout) is retryable
+        if (error.name === 'AbortError' || (error.message && error.message.toLowerCase().includes('aborted'))) {
+            return true;
+        }
+
         // 网络错误应该重试
         if (error instanceof TypeError && error.message.includes('fetch')) {
             return true;
