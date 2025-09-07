@@ -74,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 比例数据结构 ---
     const ASPECT_RATIOS = {
+        '1:1': { label: '1:1', description: '正方形', baseImage: null }, // 1:1不使用底图
         '16:9': { label: '16:9', description: '宽屏', baseImage: '16_9.png' },
         '9:16': { label: '9:16', description: '竖屏', baseImage: '9_16.png' },
         '4:3': { label: '4:3', description: '标准', baseImage: '4_3.png' },
@@ -532,12 +533,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateResultFavoriteIcon();
         
         // 调用addToHistory时，总假定是新生成的图片
-        try {
-            await addToHistory(currentGeneratedImage);
+        console.log('Attempting to add to history:', currentGeneratedImage);
+        addToHistory(currentGeneratedImage).then(() => {
             console.log('Successfully added to history:', currentGeneratedImage);
-        } catch (error) {
+        }).catch(error => {
             console.error('Failed to add to history:', error);
-        }
+        });
     }
 
     async function generateImage() {
@@ -578,9 +579,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // 构建增强的提示词，包含比例指导
             let enhancedPrompt = prompt;
-            if (baseImage && selectedRatio) {
+            if (selectedRatio) {
                 const ratioConfig = ASPECT_RATIOS[selectedRatio];
-                enhancedPrompt = `请在${ratioConfig.description}(${selectedRatio})比例的底图上生成内容。${prompt}。请确保内容完全适配${selectedRatio}的比例要求，充分利用整个画面空间。`;
+                if (selectedRatio === '1:1') {
+                    // 1:1比例使用原始提示词，不使用底图
+                    enhancedPrompt = `请生成一张1:1正方形比例的图片。${prompt}。确保图片内容完整，无边框或留白。`;
+                } else if (baseImage) {
+                    // 其他比例使用底图增强提示词
+                    enhancedPrompt = `基于提供的${ratioConfig.description}(${selectedRatio})比例底图，请在其基础上生成内容。要求：1) 不要生成白色或空白背景，要充分利用底图作为基础；2) 内容要完全覆盖整个${selectedRatio}画面空间；3) 保持与底图的视觉连贯性；4) 避免在图片周围添加边框或留白。用户需求：${prompt}`;
+                } else {
+                    // 没有底图时的提示词
+                    enhancedPrompt = `请生成一张${ratioConfig.description}(${selectedRatio})比例的图片。${prompt}。确保图片内容完整适配${selectedRatio}比例，无边框或留白。`;
+                }
             }
 
             const requestBody = {
@@ -590,10 +600,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 aspectRatio: selectedRatio
             };
 
-            // 如果有底图，添加到请求中
-            if (baseImage) {
+            // 如果有底图且不是1:1比例，添加到请求中
+            if (baseImage && selectedRatio !== '1:1') {
                 requestBody.baseImage = baseImage;
                 console.log(`使用底图: ${baseImage}，比例: ${selectedRatio}`);
+            } else if (selectedRatio === '1:1') {
+                console.log(`1:1比例不使用底图，使用模型默认输出`);
             }
 
             const response = await fetch(apiUrl, {
@@ -799,14 +811,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setupEventListeners() {
-        // 重新绑定收藏模板按钮 - 强制重新绑定
+        // 使用事件委托，避免重复绑定问题
+        console.log('Setting up event listeners...');
+        
+        // 重新绑定收藏模板按钮 - 使用更安全的方式
         const templateBtn = document.getElementById('favorite-template-btn');
-        if (templateBtn) {
-            // 移除所有现有监听器
-            templateBtn.replaceWith(templateBtn.cloneNode(true));
-            const newTemplateBtn = document.getElementById('favorite-template-btn');
-            
-            newTemplateBtn.addEventListener('click', (e) => {
+        if (templateBtn && !templateBtn.dataset.eventBound) {
+            templateBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Template favorite button clicked');
@@ -814,36 +825,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (example) {
                     console.log('Toggling favorite for template:', example);
                     toggleFavorite({ ...example, id: example.id || example.title }, 'template');
-                    updateFavoriteIcon(newTemplateBtn, example);
+                    updateTemplateFavoriteIcon();
                 }
             });
+            templateBtn.dataset.eventBound = 'true';
         }
 
         // 重新绑定收藏结果按钮
         const resultBtn = document.getElementById('favorite-result-btn');
-        if (resultBtn) {
-            resultBtn.replaceWith(resultBtn.cloneNode(true));
-            const newResultBtn = document.getElementById('favorite-result-btn');
-            
-            newResultBtn.addEventListener('click', (e) => {
+        if (resultBtn && !resultBtn.dataset.eventBound) {
+            resultBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Result favorite button clicked');
                 if (currentGeneratedImage) {
                     console.log('Toggling favorite for result:', currentGeneratedImage);
                     toggleFavorite(currentGeneratedImage, 'result');
-                    updateFavoriteIcon(newResultBtn, currentGeneratedImage);
+                    updateResultFavoriteIcon();
                 }
             });
+            resultBtn.dataset.eventBound = 'true';
         }
 
         // 绑定发送到图生图按钮 - 生成结果
         const sendToImg2ImgBtn = document.getElementById('send-to-img2img-btn');
-        if (sendToImg2ImgBtn) {
-            sendToImg2ImgBtn.replaceWith(sendToImg2ImgBtn.cloneNode(true));
-            const newSendBtn = document.getElementById('send-to-img2img-btn');
-            
-            newSendBtn.addEventListener('click', (e) => {
+        if (sendToImg2ImgBtn && !sendToImg2ImgBtn.dataset.eventBound) {
+            sendToImg2ImgBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Send to img2img button clicked');
@@ -851,33 +858,48 @@ document.addEventListener('DOMContentLoaded', () => {
                     sendImageToImg2Img(currentGeneratedImage.src);
                 }
             });
+            sendToImg2ImgBtn.dataset.eventBound = 'true';
+        }
+
+        // 绑定下载按钮
+        const downloadBtn = document.getElementById('download-result-btn');
+        if (downloadBtn && !downloadBtn.dataset.eventBound) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Download button clicked');
+                if (currentGeneratedImage && currentGeneratedImage.src) {
+                    const link = document.createElement('a');
+                    link.href = currentGeneratedImage.src;
+                    link.download = `nano-banana-${Date.now()}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+            downloadBtn.dataset.eventBound = 'true';
         }
 
         // 重新绑定历史详情收藏按钮
         const historyBtn = document.getElementById('favorite-history-detail-btn');
-        if(historyBtn) {
-            historyBtn.replaceWith(historyBtn.cloneNode(true));
-            const newHistoryBtn = document.getElementById('favorite-history-detail-btn');
-            
-            newHistoryBtn.addEventListener('click', (e) => {
+        if(historyBtn && !historyBtn.dataset.eventBound) {
+            historyBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('History detail favorite button clicked');
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
                     toggleFavorite(currentItemInDetailView, 'detail');
-                    updateFavoriteIcon(newHistoryBtn, currentItemInDetailView);
+                    updateFavoriteIcon(historyBtn, currentItemInDetailView);
                 }
             });
+            historyBtn.dataset.eventBound = 'true';
         }
 
         // 绑定发送到图生图按钮 - 历史详情
         const sendHistoryToImg2ImgBtn = document.getElementById('send-history-to-img2img-btn');
-        if(sendHistoryToImg2ImgBtn) {
-            sendHistoryToImg2ImgBtn.replaceWith(sendHistoryToImg2ImgBtn.cloneNode(true));
-            const newSendHistoryBtn = document.getElementById('send-history-to-img2img-btn');
-            
-            newSendHistoryBtn.addEventListener('click', (e) => {
+        if(sendHistoryToImg2ImgBtn && !sendHistoryToImg2ImgBtn.dataset.eventBound) {
+            sendHistoryToImg2ImgBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Send history to img2img button clicked');
@@ -887,6 +909,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     closeModal(historyDetailModal);
                 }
             });
+            sendHistoryToImg2ImgBtn.dataset.eventBound = 'true';
+        }
+
+        // 绑定历史详情下载按钮
+        const downloadHistoryBtn = document.getElementById('download-history-detail-btn');
+        if (downloadHistoryBtn && !downloadHistoryBtn.dataset.eventBound) {
+            downloadHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Download history detail button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+            downloadHistoryBtn.dataset.eventBound = 'true';
         }
     }
 
@@ -1632,13 +1674,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initialize();
+    
+    // 初始化后立即绑定事件监听器
     setupEventListeners();
     
     // 确保在页面加载完成后重新绑定历史详情模态框的按钮
     setTimeout(() => {
         setupHistoryDetailButtons();
-        // 强制重新绑定所有按钮事件
-        setupEventListeners();
     }, 100);
     
     // 添加MutationObserver来监听DOM变化，确保动态生成的按钮也能正常工作
