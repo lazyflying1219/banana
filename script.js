@@ -759,7 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 收藏功能 (模板与结果) ---
     function toggleFavorite(item, type) {
         let favorites = getStorage('favorites');
-        const itemId = item.id || item.title || item.src; 
+        const itemId = item.id || item.title || item.src;
         if (!itemId) {
             console.warn('无法收藏，因为项目没有有效ID:', item);
             return;
@@ -771,9 +771,9 @@ document.addEventListener('DOMContentLoaded', () => {
             favorites.splice(existingIndex, 1);
         } else {
             // 添加收藏，包含时间戳
-            const favoriteItem = { 
-                ...item, 
-                type, 
+            const favoriteItem = {
+                ...item,
+                type: type === 'detail' ? (item.sourceType || 'history') : type, // 保持原始来源类型
                 id: itemId,
                 timestamp: Date.now(),
                 favoriteDate: new Date().toLocaleDateString()
@@ -1062,8 +1062,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
                     toggleFavorite(currentItemInDetailView, 'detail');
-                    // 立即更新图标状态
-                    updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+                    // 延迟更新图标状态，确保收藏状态已保存
+                    setTimeout(() => {
+                        updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+                    }, 100);
                 }
             });
             
@@ -1308,12 +1310,18 @@ document.addEventListener('DOMContentLoaded', () => {
             // 点击图片查看
             img.addEventListener('click', () => {
                 const fullSrc = type === 'history' ? item.src : (item.src || item.thumbnail);
-                currentItemInDetailView = { ...item, src: fullSrc, id: item.id || item.title || item.src };
+                currentItemInDetailView = {
+                    ...item,
+                    src: fullSrc,
+                    id: item.id || item.title || item.src,
+                    sourceType: type // 添加来源类型标识
+                };
 
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
                 historyDetailPrompt.textContent = item.prompt;
                 
-                updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
+                // 重新绑定按钮事件
+                setupHistoryDetailButtons();
                 
                 downloadHistoryDetailBtn.onclick = () => {
                     const link = document.createElement('a');
