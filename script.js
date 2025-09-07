@@ -70,6 +70,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let uploadedFiles = []; // { file: File, dataUrl:string }
     let currentLightboxIndex = 0;
     let currentItemInDetailView = null; // 用于详情视图的状态管理
+    let selectedRatio = '16:9'; // 默认选中的比例
+
+    // --- 比例数据结构 ---
+    const ASPECT_RATIOS = {
+        '16:9': { label: '16:9', description: '宽屏', baseImage: '16_9.png' },
+        '9:16': { label: '9:16', description: '竖屏', baseImage: '9_16.png' },
+        '4:3': { label: '4:3', description: '标准', baseImage: '4_3.png' },
+        '3:4': { label: '3:4', description: '竖版标准', baseImage: '3_4.png' },
+        '3:2': { label: '3:2', description: '相机', baseImage: '3_2.png' },
+        '2:3': { label: '2:3', description: '竖版相机', baseImage: '2_3.png' }
+    };
 
     // --- (REMOVED) Scroll event handler is no longer needed ---
 
@@ -122,6 +133,76 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         return originalUrl;
+    }
+
+    // --- 比例选择器功能 ---
+    function initRatioSelector() {
+        const ratioContainer = document.getElementById('ratio-buttons-container');
+        if (!ratioContainer) return;
+
+        // 清空现有内容
+        ratioContainer.innerHTML = '';
+
+        // 创建比例按钮
+        Object.entries(ASPECT_RATIOS).forEach(([ratio, config]) => {
+            const button = document.createElement('button');
+            button.className = 'ratio-button';
+            button.dataset.ratio = ratio;
+            
+            // 设置按钮内容
+            const label = document.createElement('div');
+            label.className = 'ratio-label';
+            label.textContent = config.label;
+            
+            const description = document.createElement('div');
+            description.className = 'ratio-description';
+            description.textContent = config.description;
+            
+            button.appendChild(label);
+            button.appendChild(description);
+            
+            // 设置默认选中状态
+            if (ratio === selectedRatio) {
+                button.classList.add('selected');
+            }
+            
+            // 添加点击事件
+            button.addEventListener('click', () => handleRatioSelection(ratio, button));
+            
+            ratioContainer.appendChild(button);
+        });
+    }
+
+    function handleRatioSelection(ratio, buttonElement) {
+        // 移除所有选中状态
+        document.querySelectorAll('.ratio-button').forEach(btn => {
+            btn.classList.remove('selected');
+        });
+        
+        // 添加选中状态
+        buttonElement.classList.add('selected');
+        
+        // 更新选中的比例
+        selectedRatio = ratio;
+        
+        // 可选：预加载对应的底图
+        preloadBaseImage(ratio);
+        
+        console.log(`选择了比例: ${ratio}`);
+    }
+
+    function preloadBaseImage(ratio) {
+        const config = ASPECT_RATIOS[ratio];
+        if (config && config.baseImage) {
+            const img = new Image();
+            img.src = config.baseImage;
+            img.onload = () => {
+                console.log(`预加载底图成功: ${config.baseImage}`);
+            };
+            img.onerror = () => {
+                console.warn(`预加载底图失败: ${config.baseImage}`);
+            };
+        }
     }
 
     // --- 懒加载观察器 ---
@@ -465,6 +546,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
         const images = uploadedFiles.map(f => f.dataUrl);
 
+        // 获取选中的比例配置
+        const ratioConfig = ASPECT_RATIOS[selectedRatio];
+        const baseImage = ratioConfig ? ratioConfig.baseImage : null;
+
         // 验证输入
         if (!prompt.trim()) {
             alert('请输入提示词');
@@ -486,10 +571,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            const requestBody = {
+                prompt,
+                model: modelName,
+                images,
+                aspectRatio: selectedRatio
+            };
+
+            // 如果有底图，添加到请求中
+            if (baseImage) {
+                requestBody.baseImage = baseImage;
+            }
+
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, model: modelName, images }),
+                body: JSON.stringify(requestBody),
             });
 
             if (!response.ok) {
@@ -756,6 +853,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
                     toggleFavorite(currentItemInDetailView, 'detail');
+                    updateFavoriteIcon(newHistoryBtn, currentItemInDetailView);
                 }
             });
         }
@@ -1388,6 +1486,9 @@ document.addEventListener('DOMContentLoaded', () => {
         tabTextToImage.addEventListener('click', () => switchTab(tabTextToImage, textToImagePanel));
         tabImageToImage.addEventListener('click', () => switchTab(tabImageToImage, imageToImagePanel));
 
+        // 初始化比例选择器
+        initRatioSelector();
+
         // 从localStorage加载设置
         const savedModelName = localStorage.getItem('modelName');
         
@@ -1519,4 +1620,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initialize();
     setupEventListeners();
+    
+    // 确保在页面加载完成后重新绑定历史详情模态框的按钮
+    setTimeout(() => {
+        setupHistoryDetailButtons();
+    }, 100);
 });
