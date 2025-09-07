@@ -612,34 +612,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasAspectRatioImage = baseImage && selectedRatio !== '1:1';
 
             if (hasAspectRatioImage) {
-                // 场景：只要选择了非1:1的比例，就进入此逻辑
-                
-                // 1. 构建统一的、强大的指令
                 let imageInstructions = "你是一位专业的图像合成师。请严格遵循以下指令：\n";
                 imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为“画布”）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
 
                 if (hasUserImages) {
-                    // 情况A：图生图 + 宽高比控制
                     const userImageCount = uploadedFiles.length;
                     imageInstructions += `- 你接收到的前 ${userImageCount} 张图片是内容源。你的任务是将这些源图片的内容、风格、元素智能地融合、重绘到空白的“画布”上，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 } else {
-                    // 情况B：文生图 + 宽高比控制
                     imageInstructions += `- 你的任务是根据用户的文本提示词，在空白的“画布”上生成全新的内容，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 }
                 imageInstructions += `- 最终生成的图片必须内容完整，填满整个画布，绝不留下任何边框或空白区域。\n`;
                 enhancedPrompt = `${imageInstructions}\n用户的原始需求是：“${prompt}”`;
 
-                // 2. 无条件地将底图转换为Data URL并添加到图片列表的末尾
+                // 将底图转换为Data URL并添加到图片列表的末尾
                 const baseImageAsDataUrl = await imageToDataUrl(baseImage);
                 if (baseImageAsDataUrl) {
                     images.push(baseImageAsDataUrl);
-                    console.log(`已成功将底图 ${baseImage} 作为最后一张图片（画布）添加到请求中。`);
+                    console.log(`已成功将底图 ${baseImage} 作为最后一张图片添加到请求中。`);
                 } else {
-                     console.warn(`关键错误：无法加载底图 ${baseImage}，这可能导致比例生成失败。`);
+                     console.warn(`无法加载底图 ${baseImage}，将按无底图模式继续。`);
                 }
 
             } else if (selectedRatio) {
-                // 场景：选择了1:1比例，或底图加载失败
                 const ratioConfig = ASPECT_RATIOS[selectedRatio];
                 if (hasUserImages) {
                      enhancedPrompt = `请基于用户上传的图片，根据以下需求进行修改或重绘，最终输出一张 ${ratioConfig.description}(${selectedRatio}) 的图片。\n\n用户的需求是：“${prompt}”`;
@@ -648,7 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            // 构建最终的请求体
+            // 构建请求体，不再需要单独的 baseImage 和 aspectRatio 字段
             const requestBody = {
                 prompt: enhancedPrompt,
                 model: modelName,
