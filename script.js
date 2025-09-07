@@ -1257,6 +1257,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const gridItem = document.createElement('div');
             gridItem.className = 'grid-item';
             gridItem.style.position = 'relative';
+            // 统一ID逻辑并设置为data-id，以便事件委托使用
+            const itemId = type === 'history' ? item.id : (item.id || item.title || item.src);
+            if (itemId) {
+                gridItem.dataset.id = itemId;
+            }
             
             const img = document.createElement('img');
             // 历史记录优先使用缩略图，收藏夹使用旧逻辑
@@ -1269,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
             p.title = item.prompt || '';
             p.textContent = item.prompt || '';
             
-            // 删除按钮
+            // 删除按钮 (现在通过事件委托处理)
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-item-btn';
             deleteBtn.innerHTML = '×';
@@ -1299,13 +1304,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteBtn.style.display = 'none';
             });
             
-            // 删除事件
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // 注意：历史记录的ID是自增的，收藏夹的ID是别的
-                const itemId = type === 'history' ? item.id : (item.id || item.title || item.src);
-                deleteItem(itemId, type);
-            });
+            // 删除事件已被事件委托处理
             
             // 点击图片查看
             img.addEventListener('click', () => {
@@ -1776,56 +1775,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // 为历史记录和收藏夹区域使用事件委托
-    [historyContainer, favoritesContainer].forEach(container => {
+    // 为历史/收藏网格中的删除按钮设置事件委托
+    [historyGrid, favoritesGrid].forEach(container => {
         container.addEventListener('click', (event) => {
-            const target = event.target.closest('button');
+            // 只处理删除按钮
+            const target = event.target.closest('.delete-item-btn');
             if (!target) return;
+
+            event.stopPropagation();
+            const gridItem = target.closest('.grid-item');
+            const type = container.id === 'history-grid' ? 'history' : 'favorites';
+            const itemId = gridItem.dataset.id;
             
-            console.log('Grid area button clicked:', target.id, target.className);
-            
-            // 历史详情收藏按钮 - 更精确的匹配
-            if (target.id === 'favorite-history-detail-btn' ||
-                (target.classList.contains('icon-button') && target.closest('.modal-header-actions'))) {
-                event.preventDefault();
-                event.stopPropagation();
-                console.log('History detail favorite button clicked via delegation');
-                if (currentItemInDetailView) {
-                    console.log('Toggling favorite for history detail via delegation:', currentItemInDetailView);
-                    toggleFavorite(currentItemInDetailView, 'detail');
-                    updateFavoriteIcon(target, currentItemInDetailView);
-                }
-                return;
-            }
-            
-            // 历史详情下载按钮
-            if (target.id === 'download-history-detail-btn' || target.classList.contains('download-history-detail-btn')) {
-                event.preventDefault();
-                event.stopPropagation();
-                console.log('Download history detail button clicked via delegation');
-                if (currentItemInDetailView && currentItemInDetailView.src) {
-                    const link = document.createElement('a');
-                    link.href = currentItemInDetailView.src;
-                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }
-                return;
-            }
-            
-            // 历史详情发送到图生图按钮
-            if (target.id === 'send-history-to-img2img-btn' || target.classList.contains('send-history-to-img2img-btn')) {
-                event.preventDefault();
-                event.stopPropagation();
-                console.log('Send history to img2img button clicked via delegation');
-                if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src);
-                    closeModal(historyDetailModal);
-                }
-                return;
+            if (itemId) {
+                deleteItem(itemId, type);
             }
         });
+    });
+
+    // 为历史详情模态框的头部按钮设置事件委托
+    historyDetailModal.addEventListener('click', (event) => {
+        const target = event.target.closest('button');
+        if (!target) return;
+
+        console.log('History Detail Modal button clicked:', target.id);
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!currentItemInDetailView) {
+            console.warn('No item in detail view to perform action on.');
+            return;
+        }
+
+        // 收藏按钮
+        if (target.id === 'favorite-history-detail-btn') {
+            console.log('Toggling favorite for history detail via delegation:', currentItemInDetailView);
+            toggleFavorite(currentItemInDetailView, 'detail');
+            // 更新按钮状态
+            updateFavoriteIcon(target, currentItemInDetailView);
+        }
+
+        // 下载按钮
+        if (target.id === 'download-history-detail-btn') {
+             console.log('Download history detail button clicked via delegation');
+            const link = document.createElement('a');
+            link.href = currentItemInDetailView.src;
+            link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 发送到图生图按钮
+        if (target.id === 'send-history-to-img2img-btn') {
+            console.log('Send history to img2img button clicked via delegation');
+            sendImageToImg2Img(currentItemInDetailView.src);
+            closeModal(historyDetailModal);
+        }
     });
     } catch (error) {
         console.error('!!! FATAL SCRIPT ERROR:', error);
