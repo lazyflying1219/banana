@@ -130,6 +130,11 @@
             <div id="favorites-grid" class="modal-body">
                 <!-- 收藏的图片将由 JS 动态填充 -->
             </div>
+            <div id="favorites-pagination" class="pagination-controls">
+              <button id="favorites-prev-page" class="button">上一页</button>
+              <span id="favorites-page-info"></span>
+              <button id="favorites-next-page" class="button">下一页</button>
+            </div>
         </div>
     </div>
 
@@ -147,6 +152,11 @@
             </div>
             <div id="history-grid" class="modal-body">
                 <!-- 历史记录将由 JS 动态填充 -->
+            </div>
+            <div id="history-pagination" class="pagination-controls">
+              <button id="history-prev-page" class="button">上一页</button>
+              <span id="history-page-info"></span>
+              <button id="history-next-page" class="button">下一页</button>
             </div>
         </div>
     </div>
@@ -222,6 +232,8 @@
             </div>
             <div class="history-detail-body">
                 <div class="history-detail-image-container">
+                    <button id="detail-prev-item" class="detail-nav prev"><</button>
+                    <button id="detail-next-item" class="detail-nav next">></button>
                     <img id="history-detail-image" src="" alt="History detail image">
                 </div>
                 <div class="history-detail-prompt-container">
@@ -233,7 +245,6 @@
     </div>
 
     <script src="prompts.js"></script>
-    <script src="db.js?v=1.0.1"></script>
-    <script src="script.js?v=1.0.1"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
