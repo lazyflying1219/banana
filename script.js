@@ -202,6 +202,84 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             thumbItem.addEventListener('click', () => openLightbox(index));
+            
+            // 添加鼠标悬停预览功能
+            thumbItem.addEventListener('mouseenter', (e) => {
+                const example = currentExamples[index];
+                if (!example || !example.outputImages) return;
+                
+                cleanupPreviewInterval();
+                
+                const rect = thumbItem.getBoundingClientRect();
+                galleryPreviewer.innerHTML = '';
+                
+                const previewImg = document.createElement('img');
+                previewImg.style.cssText = 'width: 200px; height: 200px; object-fit: cover; border-radius: 8px;';
+                
+                // 如果有多张图片，显示轮播预览
+                if (Array.isArray(example.outputImages) && example.outputImages.length > 1) {
+                    let currentPreviewIndex = 0;
+                    
+                    const updatePreviewImage = async () => {
+                        const imageUrl = example.outputImages[currentPreviewIndex];
+                        previewImg.src = await getCachedImageOrFetch(imageUrl);
+                    };
+                    
+                    updatePreviewImage();
+                    galleryPreviewer.appendChild(previewImg);
+                    
+                    previewInterval = setInterval(() => {
+                        currentPreviewIndex = (currentPreviewIndex + 1) % example.outputImages.length;
+                        updatePreviewImage();
+                    }, 1000);
+                } else {
+                    // 单张图片预览
+                    const imageUrl = Array.isArray(example.outputImages) ? example.outputImages[0] : example.outputImages;
+                    getCachedImageOrFetch(imageUrl).then(src => {
+                        previewImg.src = src;
+                    });
+                    galleryPreviewer.appendChild(previewImg);
+                }
+                
+                // 定位预览器
+                galleryPreviewer.style.cssText = `
+                    position: fixed;
+                    left: ${rect.right + 10}px;
+                    top: ${rect.top + window.scrollY}px;
+                    z-index: 1000;
+                    background: var(--bg-color);
+                    border: 2px solid var(--accent-color);
+                    border-radius: 12px;
+                    padding: 8px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                    pointer-events: none;
+                    opacity: 0;
+                    transform: scale(0.8);
+                    transition: opacity 0.2s ease, transform 0.2s ease;
+                `;
+                
+                // 检查是否会超出右边界，如果是则显示在左边
+                if (rect.right + 220 > window.innerWidth) {
+                    galleryPreviewer.style.left = `${rect.left - 220}px`;
+                }
+                
+                // 检查是否会超出下边界，如果是则向上调整
+                if (rect.top + 220 > window.innerHeight) {
+                    galleryPreviewer.style.top = `${rect.bottom - 220 + window.scrollY}px`;
+                }
+                
+                // 显示预览器
+                requestAnimationFrame(() => {
+                    galleryPreviewer.classList.add('visible');
+                    galleryPreviewer.style.opacity = '1';
+                    galleryPreviewer.style.transform = 'scale(1)';
+                });
+            });
+            
+            thumbItem.addEventListener('mouseleave', () => {
+                cleanupGalleryPreviewer();
+            });
+            
             fragment.appendChild(thumbItem);
         });
 
@@ -529,7 +607,7 @@ async function generateImageWithRetry(retryCount = 0) {
         if (generateBtn) {
             generateBtn.addEventListener('click', () => {
                 saveDraft();
-                generateImageWithRetry();
+                generateImage();
             });
         }
     }
