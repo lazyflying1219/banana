@@ -529,10 +529,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         imageActions.classList.remove('hidden');
-        currentGeneratedImage = { ...imageData };
-        if (!currentGeneratedImage.id) {
-            currentGeneratedImage.id = `gen_${Date.now()}`;
-        }
+        currentGeneratedImage = {
+            ...imageData,
+            id: imageData.id || `gen_${Date.now()}`,
+            timestamp: Date.now()
+        };
+        console.log('Current generated image set:', currentGeneratedImage);
         updateResultFavoriteIcon();
         
         // 调用addToHistory时，总假定是新生成的图片
@@ -840,10 +842,14 @@ document.addEventListener('DOMContentLoaded', () => {
             templateBtn.dataset.eventBound = 'true';
         }
 
-        // 重新绑定收藏结果按钮
+        // 重新绑定收藏结果按钮 - 使用更可靠的方式
         const resultBtn = document.getElementById('favorite-result-btn');
-        if (resultBtn && !resultBtn.dataset.eventBound) {
-            resultBtn.addEventListener('click', (e) => {
+        if (resultBtn) {
+            // 移除旧的事件监听器
+            const newResultBtn = resultBtn.cloneNode(true);
+            resultBtn.parentNode.replaceChild(newResultBtn, resultBtn);
+            
+            newResultBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Result favorite button clicked');
@@ -851,9 +857,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log('Toggling favorite for result:', currentGeneratedImage);
                     toggleFavorite(currentGeneratedImage, 'result');
                     updateResultFavoriteIcon();
+                } else {
+                    console.warn('No current generated image to favorite');
                 }
             });
-            resultBtn.dataset.eventBound = 'true';
         }
 
         // 绑定发送到图生图按钮 - 生成结果
@@ -1711,8 +1718,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         console.log('Result area button clicked:', target.id, target.className);
         
-        // 收藏结果按钮
-        if (target.id === 'favorite-result-btn' || target.classList.contains('favorite-result-btn')) {
+        // 收藏结果按钮 - 更精确的匹配
+        if (target.id === 'favorite-result-btn' ||
+            (target.classList.contains('icon-button') && target.closest('#image-actions'))) {
             event.preventDefault();
             event.stopPropagation();
             console.log('Result favorite button clicked via delegation');

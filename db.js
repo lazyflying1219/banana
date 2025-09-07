@@ -1,5 +1,5 @@
 const DB_NAME = 'ImageStudioDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'history';
 
 let db;
