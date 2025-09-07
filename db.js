@@ -20,7 +20,7 @@ function openDB() {
         request.onupgradeneeded = (event) => {
             const tempDb = event.target.result;
             if (!tempDb.objectStoreNames.contains(STORE_NAME)) {
-                tempDb.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                tempDb.createObjectStore(STORE_NAME, { keyPath: 'id' });
             }
         };
 
