@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- 元素获取 ---
-    const tabTextToImage = document.getElementById('tab-text-to-image');
+    try {
+        console.log('!!! DOMContentLoaded event fired, starting script execution...');
+        
+        // --- 元素获取 ---
+        const tabTextToImage = document.getElementById('tab-text-to-image');
     const tabImageToImage = document.getElementById('tab-image-to-image');
     const textToImagePanel = document.getElementById('text-to-image-panel');
     const imageToImagePanel = document.getElementById('image-to-image-panel');
@@ -533,11 +536,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateResultFavoriteIcon();
         
         // 调用addToHistory时，总假定是新生成的图片
-        console.log('Attempting to add to history:', currentGeneratedImage);
+        console.log('!!! displayImage: Attempting to add to history:', currentGeneratedImage);
+        console.log('!!! displayImage: About to call addToHistory function...');
+        
         addToHistory(currentGeneratedImage).then(() => {
-            console.log('Successfully added to history:', currentGeneratedImage);
+            console.log('!!! displayImage: Successfully added to history:', currentGeneratedImage);
         }).catch(error => {
-            console.error('Failed to add to history:', error);
+            console.error('!!! displayImage: CRITICAL - Failed to add to history:', error);
         });
     }
 
@@ -608,6 +613,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`1:1比例不使用底图，使用模型默认输出`);
             }
 
+            // 添加调试日志验证API请求payload
+            console.log('API Request Payload:', JSON.stringify(requestBody, null, 2));
+            
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -812,6 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setupEventListeners() {
         // 使用事件委托，避免重复绑定问题
+        console.log('!!! setupEventListeners has been called.');
         console.log('Setting up event listeners...');
         
         // 重新绑定收藏模板按钮 - 使用更安全的方式
@@ -1111,23 +1120,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 历史记录 (IndexedDB版本) ---
     async function addToHistory(imageData) {
         try {
-            console.log("Creating thumbnail for history...");
-            const thumbnail = await createThumbnail(imageData.src);
+            console.log('!!! addToHistory called with imageData:', imageData);
             
+            // 简化版本：暂时注释掉复杂逻辑，只保留核心调用
             const historyItem = {
-                prompt: imageData.prompt,
-                model: imageData.model,
-                src: imageData.src, // 保存原始Base64
-                thumbnail: thumbnail, // 保存缩略图
+                prompt: imageData.prompt || 'Test prompt',
+                model: imageData.model || 'test-model',
+                src: imageData.src,
+                thumbnail: imageData.src, // 暂时使用原图作为缩略图
                 timestamp: Date.now(),
-                id: imageData.id || `gen_${Date.now()}` // 确保历史记录项有ID
+                id: imageData.id || `gen_${Date.now()}`
             };
-
+            
+            console.log('!!! Simplified history item prepared:', historyItem);
+            console.log('!!! Attempting to call addToHistoryDB...');
+            
             await addToHistoryDB(historyItem);
-            console.log("Successfully added to history DB.");
+            console.log('!!! Successfully added to history DB.');
 
         } catch (error) {
-            console.error('Failed to add to history:', error);
+            console.error('!!! CRITICAL: Failed to add to history:', error);
+            console.error('!!! Error stack:', error.stack);
+            console.error('!!! Error name:', error.name);
+            console.error('!!! Error message:', error.message);
         }
     }
 
@@ -1607,9 +1622,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             lightboxNext.dataset.listenerAdded = 'true';
         }
-        if (!document.dataset.keydownListenerAdded) {
+        if (!document.body.dataset.keydownListenerAdded) {
             document.addEventListener('keydown', handleKeydown);
-            document.dataset.keydownListenerAdded = 'true';
+            document.body.dataset.keydownListenerAdded = 'true';
         }
     };
 
@@ -1683,30 +1698,125 @@ document.addEventListener('DOMContentLoaded', () => {
         setupHistoryDetailButtons();
     }, 100);
     
-    // 添加MutationObserver来监听DOM变化，确保动态生成的按钮也能正常工作
-    const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                // 检查是否添加了新的按钮元素
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const buttons = node.querySelectorAll ? node.querySelectorAll('button') : [];
-                        if (buttons.length > 0 || node.tagName === 'BUTTON') {
-                            // 延迟重新绑定事件，确保DOM完全更新
-                            setTimeout(() => {
-                                setupEventListeners();
-                                setupHistoryDetailButtons();
-                            }, 50);
-                        }
-                    }
-                });
+    // 使用事件委托模式处理所有动态按钮点击事件
+    // 找到静态的父容器并绑定事件监听器
+    const resultsContainer = document.getElementById('image-actions') || document.body;
+    const historyContainer = document.getElementById('history-grid') || document.body;
+    const favoritesContainer = document.getElementById('favorites-grid') || document.body;
+    
+    // 为生成结果区域的按钮使用事件委托
+    resultsContainer.addEventListener('click', (event) => {
+        const target = event.target.closest('button');
+        if (!target) return;
+        
+        console.log('Result area button clicked:', target.id, target.className);
+        
+        // 收藏结果按钮
+        if (target.id === 'favorite-result-btn' || target.classList.contains('favorite-result-btn')) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('Result favorite button clicked via delegation');
+            if (currentGeneratedImage) {
+                console.log('Toggling favorite for result via delegation:', currentGeneratedImage);
+                toggleFavorite(currentGeneratedImage, 'result');
+                updateResultFavoriteIcon();
+            }
+            return;
+        }
+        
+        // 下载结果按钮
+        if (target.id === 'download-result-btn' || target.classList.contains('download-result-btn')) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('Download button clicked via delegation');
+            if (currentGeneratedImage && currentGeneratedImage.src) {
+                const link = document.createElement('a');
+                link.href = currentGeneratedImage.src;
+                link.download = `nano-banana-${Date.now()}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            return;
+        }
+        
+        // 发送到图生图按钮
+        if (target.id === 'send-to-img2img-btn' || target.classList.contains('send-to-img2img-btn')) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('Send to img2img button clicked via delegation');
+            if (currentGeneratedImage && currentGeneratedImage.src) {
+                sendImageToImg2Img(currentGeneratedImage.src);
+            }
+            return;
+        }
+    });
+    
+    // 为历史记录和收藏夹区域使用事件委托
+    [historyContainer, favoritesContainer].forEach(container => {
+        container.addEventListener('click', (event) => {
+            const target = event.target.closest('button');
+            if (!target) return;
+            
+            console.log('Grid area button clicked:', target.id, target.className);
+            
+            // 历史详情收藏按钮
+            if (target.id === 'favorite-history-detail-btn' || target.classList.contains('favorite-history-detail-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.log('History detail favorite button clicked via delegation');
+                if (currentItemInDetailView) {
+                    console.log('Toggling favorite for history detail via delegation:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
+                    updateFavoriteIcon(target, currentItemInDetailView);
+                }
+                return;
+            }
+            
+            // 历史详情下载按钮
+            if (target.id === 'download-history-detail-btn' || target.classList.contains('download-history-detail-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.log('Download history detail button clicked via delegation');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+                return;
+            }
+            
+            // 历史详情发送到图生图按钮
+            if (target.id === 'send-history-to-img2img-btn' || target.classList.contains('send-history-to-img2img-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.log('Send history to img2img button clicked via delegation');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    closeModal(historyDetailModal);
+                }
+                return;
             }
         });
     });
-    
-    // 观察整个文档的变化
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    } catch (error) {
+        console.error('!!! FATAL SCRIPT ERROR:', error);
+        console.error('!!! Error stack:', error.stack);
+        console.error('!!! Error name:', error.name);
+        console.error('!!! Error message:', error.message);
+        
+        // 显示用户友好的错误信息
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #dc3545; color: white; padding: 20px; border-radius: 8px; z-index: 10000; max-width: 500px; text-align: center;';
+        errorDiv.innerHTML = `
+            <h3>⚠️ 脚本执行失败</h3>
+            <p>检测到致命错误，请打开开发者工具查看详细信息。</p>
+            <p style="font-size: 0.8em; margin-top: 10px;">错误类型: ${error.name}</p>
+            <button onclick="this.parentElement.remove()" style="margin-top: 10px; background: white; color: #dc3545; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">关闭</button>
+        `;
+        document.body.appendChild(errorDiv);
+    }
 });

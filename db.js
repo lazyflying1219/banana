@@ -32,18 +32,41 @@ function openDB() {
 }
 
 async function addToHistoryDB(item) {
-    const db = await openDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    console.log('Attempting to add to history DB:', item);
     
-    // Add a timestamp for sorting
-    item.timestamp = Date.now();
+    try {
+        console.log('Opening IndexedDB...');
+        const db = await openDB();
+        console.log('IndexedDB opened successfully');
+        
+        console.log('Creating transaction...');
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        transaction.oncomplete = () => console.log('History transaction completed.');
+        transaction.onerror = (event) => console.error('History transaction error:', event.target.error);
+        
+        console.log('Getting object store...');
+        const store = transaction.objectStore(STORE_NAME);
+        
+        // Add a timestamp for sorting
+        item.timestamp = Date.now();
+        console.log('Item with timestamp prepared for DB:', item);
 
-    return new Promise((resolve, reject) => {
-        const request = store.add(item);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
+        return new Promise((resolve, reject) => {
+            console.log('Adding item to store...');
+            const request = store.add(item);
+            request.onsuccess = () => {
+                console.log('Item added to history DB successfully with ID:', request.result);
+                resolve(request.result);
+            };
+            request.onerror = (event) => {
+                console.error('Failed to add item to history DB:', event.target.error);
+                reject(event.target.error);
+            };
+        });
+    } catch (error) {
+        console.error('Error in addToHistoryDB:', error);
+        throw error;
+    }
 }
 
 async function getHistoryDB(count = 50) {
