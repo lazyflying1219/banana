@@ -532,7 +532,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateResultFavoriteIcon();
         
         // 调用addToHistory时，总假定是新生成的图片
-        await addToHistory(currentGeneratedImage);
+        try {
+            await addToHistory(currentGeneratedImage);
+            console.log('Successfully added to history:', currentGeneratedImage);
+        } catch (error) {
+            console.error('Failed to add to history:', error);
+        }
     }
 
     async function generateImage() {
@@ -571,8 +576,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
+            // 构建增强的提示词，包含比例指导
+            let enhancedPrompt = prompt;
+            if (baseImage && selectedRatio) {
+                const ratioConfig = ASPECT_RATIOS[selectedRatio];
+                enhancedPrompt = `请在${ratioConfig.description}(${selectedRatio})比例的底图上生成内容。${prompt}。请确保内容完全适配${selectedRatio}的比例要求，充分利用整个画面空间。`;
+            }
+
             const requestBody = {
-                prompt,
+                prompt: enhancedPrompt,
                 model: modelName,
                 images,
                 aspectRatio: selectedRatio
@@ -581,6 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 如果有底图，添加到请求中
             if (baseImage) {
                 requestBody.baseImage = baseImage;
+                console.log(`使用底图: ${baseImage}，比例: ${selectedRatio}`);
             }
 
             const response = await fetch(apiUrl, {
@@ -1624,5 +1637,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // 确保在页面加载完成后重新绑定历史详情模态框的按钮
     setTimeout(() => {
         setupHistoryDetailButtons();
+        // 强制重新绑定所有按钮事件
+        setupEventListeners();
     }, 100);
+    
+    // 添加MutationObserver来监听DOM变化，确保动态生成的按钮也能正常工作
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                // 检查是否添加了新的按钮元素
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const buttons = node.querySelectorAll ? node.querySelectorAll('button') : [];
+                        if (buttons.length > 0 || node.tagName === 'BUTTON') {
+                            // 延迟重新绑定事件，确保DOM完全更新
+                            setTimeout(() => {
+                                setupEventListeners();
+                                setupHistoryDetailButtons();
+                            }, 50);
+                        }
+                    }
+                });
+            }
+        });
+    });
+    
+    // 观察整个文档的变化
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 });
