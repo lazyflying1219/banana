@@ -35,8 +35,17 @@ export async function onRequest(context) {
     const modelName = body.model || 'vertexpic-gemini-2.5-flash-image-preview';
 
     // 为生图优化提示词
-    // 根据用户要求，始终在提示词前添加指令以强制图片生成
-    const optimizedPrompt = `Generate an image: ${body.prompt}`;
+    let optimizedPrompt = body.prompt;
+    if (modelName.includes('gemini') || modelName.includes('image')) {
+      // 如果提示词没有明确要求生成图片，则添加指令
+      if (!optimizedPrompt.toLowerCase().includes('generate') &&
+        !optimizedPrompt.toLowerCase().includes('create') &&
+        !optimizedPrompt.toLowerCase().includes('draw') &&
+        !optimizedPrompt.toLowerCase().includes('生成') &&
+        !optimizedPrompt.toLowerCase().includes('画')) {
+        optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
+      }
+    }
 
     // 格式1: 针对Veloera/Gemini优化的格式
     let forwardBody = {
@@ -103,85 +112,141 @@ export async function onRequest(context) {
     // 使用正确的完整API端点
     let apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
-    // 最终修复：强制所有请求使用流式响应
+    // 尝试两种方式：流式和非流式
+    let apiResponse;
     let responseData;
-    const streamBody = { ...forwardBody, stream: true };
 
-    console.log('强制使用流式请求:', apiUrl);
-    console.log('请求体:', JSON.stringify(streamBody, null, 2));
-
-    const streamResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
+    try {
+      // 方式1: 非流式请求
+      console.log('发送API请求到:', apiUrl);
+      console.log('请求体:', JSON.stringify(forwardBody, null, 2));
+      
+      // 添加超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+      
+      try {
+        apiResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(streamBody),
-    });
+          },
+          body: JSON.stringify(forwardBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('API请求超时，请稍后重试');
+        }
+        throw fetchError;
+      }
 
-    if (!streamResponse.ok) {
-        const errorText = await streamResponse.text();
+      console.log('API响应状态:', apiResponse.status);
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
         console.error('API错误响应:', errorText);
-        throw new Error(`HTTP ${streamResponse.status}: ${errorText}`);
-    }
+        throw new Error(`HTTP ${apiResponse.status}: ${errorText}`);
+      }
 
-    // 处理流式响应
-    const reader = streamResponse.body.getReader();
-    const decoder = new TextDecoder();
-    let fullContent = '';
-    let buffer = '';
+      responseData = await apiResponse.json();
+      console.log('API响应数据长度:', JSON.stringify(responseData).length);
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      // 检查是否有完整的图片数据
+      const hasCompleteImage = JSON.stringify(responseData).includes('data:image') &&
+        JSON.stringify(responseData).match(/data:image\/[^"]+/);
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+      // 如果没有完整图片数据，尝试流式请求
+      if (!hasCompleteImage) {
+        console.log('No complete image found, trying streaming...');
+        const streamBody = { ...forwardBody, stream: true };
 
-        for (const line of lines) {
-            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                try {
+        const streamResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(streamBody),
+        });
+
+        if (streamResponse.ok) {
+          // 处理流式响应
+          const reader = streamResponse.body.getReader();
+          const decoder = new TextDecoder();
+          let fullContent = '';
+          let buffer = '';
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+
+              // 保留最后一行（可能不完整）
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                  try {
                     const jsonStr = line.slice(6).trim();
                     if (jsonStr) {
-                        const data = JSON.parse(jsonStr);
-                        if (data.choices && data.choices[0]?.delta?.content) {
-                            fullContent += data.choices[0].delta.content;
-                        }
+                      const data = JSON.parse(jsonStr);
+                      if (data.choices && data.choices[0]?.delta?.content) {
+                        fullContent += data.choices[0].delta.content;
+                      }
                     }
-                } catch (e) {
+                  } catch (e) {
+                    // 忽略解析错误，继续处理
                     console.log('Parse error for line:', line.slice(0, 100));
+                  }
                 }
+              }
             }
-        }
-    }
 
-    if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
-        try {
-            const jsonStr = buffer.slice(6).trim();
-            if (jsonStr) {
-                const data = JSON.parse(jsonStr);
-                if (data.choices && data.choices[0]?.delta?.content) {
+            // 处理剩余的buffer
+            if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
+              try {
+                const jsonStr = buffer.slice(6).trim();
+                if (jsonStr) {
+                  const data = JSON.parse(jsonStr);
+                  if (data.choices && data.choices[0]?.delta?.content) {
                     fullContent += data.choices[0].delta.content;
+                  }
                 }
+              } catch (e) {
+                console.log('Parse error for final buffer');
+              }
             }
-        } catch (e) {
-            console.log('Parse error for final buffer');
+
+            console.log('Stream content length:', fullContent.length);
+
+            // 构造完整响应
+            if (fullContent.length > 0) {
+              responseData = {
+                choices: [{
+                  message: {
+                    content: fullContent
+                  }
+                }],
+                usage: {
+                  completion_tokens: fullContent.length
+                }
+              };
+            }
+          } catch (streamError) {
+            console.log('Stream processing error:', streamError.message);
+          }
         }
-    }
-
-    console.log('Stream content length:', fullContent.length);
-
-    if (fullContent.length > 0) {
-        responseData = {
-            choices: [{
-                message: { content: fullContent }
-            }],
-            usage: { completion_tokens: fullContent.length }
-        };
-    } else {
-        // 如果流式响应为空，则构造一个错误，让前端知道
-        responseData = { error: "Stream returned empty content." };
+      }
+    } catch (streamError) {
+      // 如果流式请求失败，继续使用原始响应
+      console.log('Stream request failed, using original response');
     }
 
     // 错误处理已在上面的try-catch中处理
