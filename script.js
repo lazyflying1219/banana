@@ -548,6 +548,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- 新增辅助函数：将图片URL转换为Data URL ---
+    async function imageToDataUrl(url) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`无法获取图片: ${url}, 状态: ${response.status}`);
+            }
+            const blob = await response.blob();
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (error) {
+            console.error("图片转换Data URL失败:", error);
+            return null;
+        }
+    }
+
     async function generateImage() {
         return await generateImageWithRetry();
     }
@@ -557,7 +577,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const apiUrl = '/api/generate';
         const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
-        const images = uploadedFiles.map(f => f.dataUrl);
+        
+        // 初始图片列表只包含用户上传的图片
+        let images = uploadedFiles.map(f => f.dataUrl);
 
         // 获取选中的比例配置
         const ratioConfig = ASPECT_RATIOS[selectedRatio];
@@ -584,59 +606,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // 构建增强的提示词，以支持多图融合和精确的宽高比控制
+            // 构建增强的提示词
             let enhancedPrompt = prompt;
             const hasUserImages = uploadedFiles && uploadedFiles.length > 0;
             const hasAspectRatioImage = baseImage && selectedRatio !== '1:1';
 
             if (hasAspectRatioImage) {
-                // 场景：选择了宽高比（非1:1），因此有底图（宽高比参考图）
-                // 后端会将底图作为最后一张图片发送给模型
                 let imageInstructions = "你是一位专业的图像合成师。请严格遵循以下指令：\n";
                 imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为“画布”）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
 
                 if (hasUserImages) {
-                    // 情况A：图生图 + 宽高比控制
-                    // 用户上传了图片，并且选择了宽高比
                     const userImageCount = uploadedFiles.length;
                     imageInstructions += `- 你接收到的前 ${userImageCount} 张图片是内容源。你的任务是将这些源图片的内容、风格、元素智能地融合、重绘到空白的“画布”上，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 } else {
-                    // 情况B：文生图 + 宽高比控制
-                    // 用户没有上传图片，但选择了宽高比
                     imageInstructions += `- 你的任务是根据用户的文本提示词，在空白的“画布”上生成全新的内容，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 }
                 imageInstructions += `- 最终生成的图片必须内容完整，填满整个画布，绝不留下任何边框或空白区域。\n`;
                 enhancedPrompt = `${imageInstructions}\n用户的原始需求是：“${prompt}”`;
 
+                // 将底图转换为Data URL并添加到图片列表的末尾
+                const baseImageAsDataUrl = await imageToDataUrl(baseImage);
+                if (baseImageAsDataUrl) {
+                    images.push(baseImageAsDataUrl);
+                    console.log(`已成功将底图 ${baseImage} 作为最后一张图片添加到请求中。`);
+                } else {
+                     console.warn(`无法加载底图 ${baseImage}，将按无底图模式继续。`);
+                }
+
             } else if (selectedRatio) {
-                // 场景：选择了宽高比，但没有底图（例如1:1或底图加载失败）
                 const ratioConfig = ASPECT_RATIOS[selectedRatio];
                 if (hasUserImages) {
-                     // 图生图，但没有指定比例（或1:1）
                      enhancedPrompt = `请基于用户上传的图片，根据以下需求进行修改或重绘，最终输出一张 ${ratioConfig.description}(${selectedRatio}) 的图片。\n\n用户的需求是：“${prompt}”`;
                 } else {
-                    // 文生图，没有指定比例（或1:1）
                     enhancedPrompt = `请根据用户的需求生成一张图片。最终图片的宽高比必须为 ${ratioConfig.description} (${selectedRatio})。请确保内容完整并填满整个画面，不要留有边框。\n\n用户的需求是：“${prompt}”`;
                 }
             }
-
+            
+            // 构建请求体，不再需要单独的 baseImage 和 aspectRatio 字段
             const requestBody = {
                 prompt: enhancedPrompt,
                 model: modelName,
-                images,
-                aspectRatio: selectedRatio
+                images: images,
             };
 
-            // 如果有底图且不是1:1比例，添加到请求中
-            if (baseImage && selectedRatio !== '1:1') {
-                requestBody.baseImage = baseImage;
-                console.log(`使用底图: ${baseImage}，比例: ${selectedRatio}`);
-            } else if (selectedRatio === '1:1') {
-                console.log(`1:1比例不使用底图，使用模型默认输出`);
-            }
-
             // 添加调试日志验证API请求payload
-            console.log('API Request Payload:', JSON.stringify(requestBody, null, 2));
+            console.log('API Request Payload (first 100 chars of images):', {
+                ...requestBody,
+                images: requestBody.images.map(img => img.substring(0, 100) + '...')
+            });
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
