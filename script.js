@@ -1320,6 +1320,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyDetailImage.src = getProxiedImageUrl(fullSrc);
                 historyDetailPrompt.textContent = item.prompt;
                 
+                // 根据来源类型设置模态框标题
+                const titleElement = document.getElementById('history-detail-title');
+                if (titleElement) {
+                    titleElement.textContent = type === 'favorites' ? '收藏详情' : '历史记录详情';
+                }
+                
                 // 重新绑定按钮事件
                 setupHistoryDetailButtons();
                 
