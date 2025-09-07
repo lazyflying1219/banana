@@ -634,14 +634,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const result = await response.json();
             
-            if (result.src) {
+            if (result.b64_json) {
+                const dataUrl = 'data:image/png;base64,' + result.b64_json;
                 // 成功生成，重置UI状态
                 generateBtn.textContent = '生成';
                 generateBtn.disabled = false;
-                displayImage({ src: result.src, prompt: prompt, model: modelName });
+                displayImage({ src: dataUrl, prompt: prompt, model: modelName });
                 return;
-            } else {
-                throw new Error('API 返回数据中未找到图片');
+            } else if (result.error) {
+                throw new Error(`API 错误: ${result.error}`);
+            }
+            else {
+                throw new Error('API 返回数据中未找到 b64_json');
             }
 
         } catch (error) {
@@ -1507,7 +1511,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const result = await response.json();
                 
-                if (response.ok && result.src) {
+                if (response.ok && result.b64_json) {
                     apiTestResult.innerHTML = '<div style="color: #28a745;">✅ API连接成功！图片生成正常</div>';
                 } else {
                     apiTestResult.innerHTML = `
