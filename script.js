@@ -708,8 +708,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return await generateImageWithRetry();
     }
 
-    async function generateImageWithRetry(retryCount = 0) {
-        const maxRetries = 5; // 增加重试次数以提高网络不稳定时的成功率
+    async function generateImageWithRetry(retryCount = 0, isTextResponseError = false) {
+        // 根据错误类型设置不同的最大重试次数
+        const maxRetries = isTextResponseError ? 2 : 3;
         const apiUrl = '/api/generate';
         const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
@@ -737,7 +738,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // 重试时更新加载信息
             const loadingText = imageDisplay.querySelector('.loading-spinner p');
             if (loadingText) {
-                loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries})`;
+                if (isTextResponseError) {
+                    loadingText.textContent = `模型返回了文本而非图片，正在自动重试... (${retryCount}/${maxRetries})`;
+                } else {
+                    loadingText.textContent = `正在重试生成图片... (${retryCount}/${maxRetries})`;
+                }
             }
         }
 
@@ -823,7 +828,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 displayImage({ src: result.src, prompt: prompt, model: modelName });
                 return;
             } else {
-                throw new Error('API 返回数据中未找到图片');
+                // 检查是否是只有文本返回的情况
+                if (result.text || result.content || result.response) {
+                    // 如果是第一次重试，自动重试
+                    if (retryCount === 0) {
+                        console.log('Model returned text instead of image, auto-retrying...');
+                        // 创建一个特殊的错误对象，标记为文本响应错误
+                        const textError = new Error('Model returned text instead of image');
+                        textError.isTextResponseError = true;
+                        throw textError;
+                    } else {
+                        // 如果是第二次重试，提示用户更改提示词
+                        const textError = new Error('Model returned text instead of image. Please try modifying your prompt to be more specific about the image you want to generate.');
+                        textError.isTextResponseError = true;
+                        throw textError;
+                    }
+                } else {
+                    throw new Error('API 返回数据中未找到图片');
+                }
             }
 
         } catch (error) {
@@ -833,12 +855,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (retryCount < maxRetries && shouldRetry(error)) {
                 console.log(`准备进行第 ${retryCount + 1} 次重试...`);
                 
-                // 智能延迟：递增延迟时间，增加初始延迟和最大延迟
-                const delay = Math.min(2000 * Math.pow(2, retryCount), 30000); // 2s, 4s, 8s, 16s, 最大30s
+                // 固定延迟20秒
+                const delay = 20000; // 20秒
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
-                // 递归重试
-                return await generateImageWithRetry(retryCount + 1);
+                // 递归重试，传递错误类型
+                return await generateImageWithRetry(retryCount + 1, error.isTextResponseError || false);
             }
             
             // 所有重试都失败了，显示错误信息
@@ -892,7 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
             details: error.details || null,
             rawResponse: error.rawResponse || null,
             responseText: error.responseText || null,
-            totalRetries: finalRetryCount
+            totalRetries: finalRetryCount,
+            isTextResponseError: error.isTextResponseError || false
         };
         
         // 如果是网络错误，添加更多信息
@@ -902,10 +925,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         let displayMessage = error.error || error.message || '生成失败，请重试';
+        let showRetryButton = true;
         
-        // 如果进行了重试，在消息中体现
-        if (finalRetryCount > 0) {
-            displayMessage += ` (已自动重试 ${finalRetryCount} 次)`;
+        // 检查是否是模型返回文本而非图片的错误
+        if (error.isTextResponseError) {
+            // 文本响应错误的处理
+            const maxTextRetries = 2; // 文本响应最多重试2次
+            if (finalRetryCount >= maxTextRetries - 1) {
+                // 第二次重试后，提示用户更改提示词
+                displayMessage = '模型返回了文本而非图片。请尝试修改提示词，更明确地描述您想要生成的图片内容。';
+                showRetryButton = false; // 不显示重试按钮
+            } else {
+                // 第一次重试，显示自动重试信息
+                displayMessage = '模型返回了文本而非图片，正在自动重试...';
+            }
+        } else if (finalRetryCount > 0) {
+            // 其他错误，显示重试次数
+            const maxOtherRetries = 3; // 其他错误最多重试3次
+            displayMessage += ` (已自动重试 ${finalRetryCount}/${maxOtherRetries} 次)`;
         }
         
         const errorDiv = document.createElement('div');
@@ -923,14 +960,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails, null, 2)}</pre>
         `;
         
-        const retryBtn = document.createElement('button');
-        retryBtn.className = 'retry-btn';
-        retryBtn.textContent = '手动重试';
-        retryBtn.addEventListener('click', generateImage);
+        // 只有在需要时才添加重试按钮
+        if (showRetryButton) {
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'retry-btn';
+            retryBtn.textContent = '手动重试';
+            retryBtn.addEventListener('click', generateImage);
+            errorDiv.appendChild(retryBtn);
+        }
         
         errorDiv.appendChild(errorP);
         errorDiv.appendChild(debugInfo);
-        errorDiv.appendChild(retryBtn);
         imageDisplay.innerHTML = '';
         imageDisplay.appendChild(errorDiv);
     }
@@ -1098,8 +1138,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Download button clicked');
                 if (currentGeneratedImage && currentGeneratedImage.src) {
                     const link = document.createElement('a');
-                    link.href = currentGeneratedImage.src;
+                    // 确保使用完整的URL，包括协议
+                    let imageUrl = currentGeneratedImage.src;
+                    if (imageUrl.startsWith('//')) {
+                        imageUrl = window.location.protocol + imageUrl;
+                    } else if (imageUrl.startsWith('/')) {
+                        imageUrl = window.location.origin + imageUrl;
+                    }
+                    link.href = imageUrl;
                     link.download = `nano-banana-${Date.now()}.png`;
+                    link.target = '_blank'; // 在新标签页中打开
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -1149,8 +1197,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Download history detail button clicked');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
                     const link = document.createElement('a');
-                    link.href = currentItemInDetailView.src;
+                    // 确保使用完整的URL，包括协议
+                    let imageUrl = currentItemInDetailView.src;
+                    if (imageUrl.startsWith('//')) {
+                        imageUrl = window.location.protocol + imageUrl;
+                    } else if (imageUrl.startsWith('/')) {
+                        imageUrl = window.location.origin + imageUrl;
+                    }
+                    link.href = imageUrl;
                     link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    link.target = '_blank'; // 在新标签页中打开
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -2082,8 +2138,16 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Download button clicked via delegation');
             if (currentGeneratedImage && currentGeneratedImage.src) {
                 const link = document.createElement('a');
-                link.href = currentGeneratedImage.src;
+                // 确保使用完整的URL，包括协议
+                let imageUrl = currentGeneratedImage.src;
+                if (imageUrl.startsWith('//')) {
+                    imageUrl = window.location.protocol + imageUrl;
+                } else if (imageUrl.startsWith('/')) {
+                    imageUrl = window.location.origin + imageUrl;
+                }
+                link.href = imageUrl;
                 link.download = `nano-banana-${Date.now()}.png`;
+                link.target = '_blank'; // 在新标签页中打开
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -2133,8 +2197,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Download history detail button clicked via delegation');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
                     const link = document.createElement('a');
-                    link.href = currentItemInDetailView.src;
+                    // 确保使用完整的URL，包括协议
+                    let imageUrl = currentItemInDetailView.src;
+                    if (imageUrl.startsWith('//')) {
+                        imageUrl = window.location.protocol + imageUrl;
+                    } else if (imageUrl.startsWith('/')) {
+                        imageUrl = window.location.origin + imageUrl;
+                    }
+                    link.href = imageUrl;
                     link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    link.target = '_blank'; // 在新标签页中打开
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
