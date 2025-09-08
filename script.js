@@ -709,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function generateImageWithRetry(retryCount = 0) {
-        const maxRetries = 3;
+        const maxRetries = 5; // 增加重试次数以提高网络不稳定时的成功率
         const apiUrl = '/api/generate';
         const modelName = modelNameInput ? modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
         const prompt = textToImagePanel.classList.contains('active') ? promptInputText.value : promptInputImage.value;
@@ -826,8 +826,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (retryCount < maxRetries && shouldRetry(error)) {
                 console.log(`准备进行第 ${retryCount + 1} 次重试...`);
                 
-                // 智能延迟：递增延迟时间
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // 1s, 2s, 4s, 最大5s
+                // 智能延迟：递增延迟时间，增加初始延迟和最大延迟
+                const delay = Math.min(2000 * Math.pow(2, retryCount), 30000); // 2s, 4s, 8s, 16s, 最大30s
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
                 // 递归重试
