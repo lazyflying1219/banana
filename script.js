@@ -803,8 +803,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const existingIndex = favorites.findIndex(fav => fav.id === itemId);
-        const isFavoriting = existingIndex === -1; // true表示正在收藏，false表示正在取消收藏
-        
         if (existingIndex > -1) {
             // 取消收藏
             favorites.splice(existingIndex, 1);
@@ -826,35 +824,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         setStorage('favorites', favorites);
-        
-        // 立即更新所有相关的收藏图标状态
         if (type === 'template') {
             updateTemplateFavoriteIcon();
         } else if (type === 'result') {
             updateResultFavoriteIcon();
         } else if (type === 'detail') {
             // 更新历史记录详情视图的收藏图标
-            const favoriteBtn = document.getElementById('favorite-history-detail-btn');
-            if (favoriteBtn) {
-                updateFavoriteIcon(favoriteBtn, currentItemInDetailView);
-            }
-        }
-        
-        // 如果是历史记录或收藏夹中的项目，还需要更新网格中的图标
-        if (type === 'detail' && (item.sourceType === 'history' || item.sourceType === 'favorites')) {
-            // 延迟更新网格中的图标，确保DOM已更新
-            setTimeout(() => {
-                const gridItems = document.querySelectorAll('.grid-item');
-                gridItems.forEach(gridItem => {
-                    const img = gridItem.querySelector('img');
-                    if (img && img.src === item.src) {
-                        const favIcon = gridItem.querySelector('.favorite-icon');
-                        if (favIcon) {
-                            favIcon.classList.toggle('favorited', isFavoriting);
-                        }
-                    }
-                });
-            }, 50);
+            updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
         }
     }
 
@@ -863,23 +839,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const itemId = item.id || item.title || item.src;
         const favorites = getStorage('favorites');
         const isFavorited = favorites.some(fav => fav.id === itemId);
-        
-        // 确保按钮有正确的SVG图标
-        let heartIcon = button.querySelector('.heart-icon');
-        if (!heartIcon) {
-            // 如果没有找到heart-icon，尝试查找任何SVG图标
-            heartIcon = button.querySelector('svg');
-        }
-        
-        // 更新收藏状态类
         button.classList.toggle('favorited', isFavorited);
-        
-        // 如果有SVG图标，也更新它的样式
-        if (heartIcon) {
-            heartIcon.classList.toggle('favorited', isFavorited);
-        }
-        
-        console.log(`Updated favorite icon for ${itemId}: ${isFavorited ? 'favorited' : 'not favorited'}`);
     }
 
     function updateTemplateFavoriteIcon() {
@@ -902,8 +862,127 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('!!! setupEventListeners has been called.');
         console.log('Setting up event listeners...');
         
-        // 移除所有旧的事件监听器，使用统一的事件委托方式
-        // 这里不再直接绑定事件，而是使用全局事件委托
+        // 重新绑定收藏模板按钮 - 使用更安全的方式
+        const templateBtn = document.getElementById('favorite-template-btn');
+        if (templateBtn && !templateBtn.dataset.eventBound) {
+            templateBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Template favorite button clicked');
+                const example = currentExamples[currentIndexOnPage];
+                if (example) {
+                    console.log('Toggling favorite for template:', example);
+                    toggleFavorite({ ...example, id: example.id || example.title }, 'template');
+                    updateTemplateFavoriteIcon();
+                }
+            });
+            templateBtn.dataset.eventBound = 'true';
+        }
+
+        // 重新绑定收藏结果按钮 - 使用更可靠的方式
+        const resultBtn = document.getElementById('favorite-result-btn');
+        if (resultBtn) {
+            // 移除旧的事件监听器
+            const newResultBtn = resultBtn.cloneNode(true);
+            resultBtn.parentNode.replaceChild(newResultBtn, resultBtn);
+            
+            newResultBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Result favorite button clicked');
+                if (currentGeneratedImage) {
+                    console.log('Toggling favorite for result:', currentGeneratedImage);
+                    toggleFavorite(currentGeneratedImage, 'result');
+                    updateResultFavoriteIcon();
+                } else {
+                    console.warn('No current generated image to favorite');
+                }
+            });
+        }
+
+        // 绑定发送到图生图按钮 - 生成结果
+        const sendToImg2ImgBtn = document.getElementById('send-to-img2img-btn');
+        if (sendToImg2ImgBtn && !sendToImg2ImgBtn.dataset.eventBound) {
+            sendToImg2ImgBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send to img2img button clicked');
+                if (currentGeneratedImage && currentGeneratedImage.src) {
+                    sendImageToImg2Img(currentGeneratedImage.src);
+                }
+            });
+            sendToImg2ImgBtn.dataset.eventBound = 'true';
+        }
+
+        // 绑定下载按钮
+        const downloadBtn = document.getElementById('download-result-btn');
+        if (downloadBtn && !downloadBtn.dataset.eventBound) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Download button clicked');
+                if (currentGeneratedImage && currentGeneratedImage.src) {
+                    const link = document.createElement('a');
+                    link.href = currentGeneratedImage.src;
+                    link.download = `nano-banana-${Date.now()}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+            downloadBtn.dataset.eventBound = 'true';
+        }
+
+        // 重新绑定历史详情收藏按钮
+        const favoriteHistoryDetailBtn = document.getElementById('favorite-history-detail-btn');
+        if(favoriteHistoryDetailBtn && !favoriteHistoryDetailBtn.dataset.eventBound) {
+            favoriteHistoryDetailBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('History detail favorite button clicked');
+                if (currentItemInDetailView) {
+                    console.log('Toggling favorite for history detail:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
+                    updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
+                }
+            });
+            favoriteHistoryDetailBtn.dataset.eventBound = 'true';
+        }
+
+        // 绑定发送到图生图按钮 - 历史详情
+        const sendHistoryToImg2ImgBtn = document.getElementById('send-history-to-img2img-btn');
+        if(sendHistoryToImg2ImgBtn && !sendHistoryToImg2ImgBtn.dataset.eventBound) {
+            sendHistoryToImg2ImgBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send history to img2img button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    // 关闭历史详情模态框
+                    closeModal(historyDetailModal);
+                }
+            });
+            sendHistoryToImg2ImgBtn.dataset.eventBound = 'true';
+        }
+
+        // 绑定历史详情下载按钮
+        const downloadHistoryBtn = document.getElementById('download-history-detail-btn');
+        if (downloadHistoryBtn && !downloadHistoryBtn.dataset.eventBound) {
+            downloadHistoryBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Download history detail button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
+            downloadHistoryBtn.dataset.eventBound = 'true';
+        }
     }
 
     // 发送图片到图生图功能
@@ -1006,11 +1085,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 专门为历史详情模态框绑定按钮事件
     function setupHistoryDetailButtons() {
-        // 移除所有直接事件绑定，改为使用全局事件委托
-        // 这里只需要更新收藏图标状态，不需要绑定事件
+        // 绑定收藏按钮 - 使用更可靠的方式
         const favoriteBtn = document.getElementById('favorite-history-detail-btn');
-        if (favoriteBtn && currentItemInDetailView) {
-            updateFavoriteIcon(favoriteBtn, currentItemInDetailView);
+        if (favoriteBtn) {
+            // 移除旧的事件监听器
+            const newFavoriteBtn = favoriteBtn.cloneNode(true);
+            favoriteBtn.parentNode.replaceChild(newFavoriteBtn, favoriteBtn);
+            
+            newFavoriteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('History detail favorite button clicked');
+                if (currentItemInDetailView) {
+                    console.log('Toggling favorite for history detail:', currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail');
+                    // 延迟更新图标状态，确保收藏状态已保存
+                    setTimeout(() => {
+                        updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+                    }, 100);
+                }
+            });
+            
+            // 更新收藏图标
+            updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+        }
+
+        // 绑定发送到图生图按钮
+        const sendBtn = document.getElementById('send-history-to-img2img-btn');
+        if (sendBtn) {
+            // 移除旧的事件监听器
+            sendBtn.replaceWith(sendBtn.cloneNode(true));
+            const newSendBtn = document.getElementById('send-history-to-img2img-btn');
+            
+            newSendBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Send history to img2img button clicked');
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    sendImageToImg2Img(currentItemInDetailView.src);
+                    // 关闭历史详情模态框
+                    closeModal(historyDetailModal);
+                }
+            });
+        }
+
+        // 绑定下载按钮
+        const downloadBtn = document.getElementById('download-history-detail-btn');
+        if (downloadBtn) {
+            downloadBtn.replaceWith(downloadBtn.cloneNode(true));
+            const newDownloadBtn = document.getElementById('download-history-detail-btn');
+            
+            newDownloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (currentItemInDetailView && currentItemInDetailView.src) {
+                    const link = document.createElement('a');
+                    link.href = currentItemInDetailView.src;
+                    link.download = `nano-banana-history-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            });
         }
     }
 
@@ -1227,20 +1363,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     titleElement.textContent = type === 'favorites' ? '收藏详情' : '历史记录详情';
                 }
                 
-                // 更新历史详情按钮状态
+                // 重新绑定按钮事件
                 setupHistoryDetailButtons();
+                
+                downloadHistoryDetailBtn.onclick = () => {
+                    const link = document.createElement('a');
+                    link.href = fullSrc;
+                    link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                };
 
                 openModal(historyDetailModal);
-                
-                // 延迟更新按钮状态，确保模态框完全打开
-                setTimeout(() => {
-                    if (currentItemInDetailView) {
-                        const favoriteBtn = document.getElementById('favorite-history-detail-btn');
-                        if (favoriteBtn) {
-                            updateFavoriteIcon(favoriteBtn, currentItemInDetailView);
-                        }
-                    }
-                }, 100);
             });
             
             // 添加时间信息（如果有）
@@ -1628,7 +1763,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsContainer = document.getElementById('image-actions') || document.body;
     const historyContainer = document.getElementById('history-grid') || document.body;
     const favoritesContainer = document.getElementById('favorites-grid') || document.body;
-    const templateContainer = document.querySelector('.template-actions') || document.body;
     
     // 为生成结果区域的按钮使用事件委托
     resultsContainer.addEventListener('click', (event) => {
@@ -1674,44 +1808,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Send to img2img button clicked via delegation');
             if (currentGeneratedImage && currentGeneratedImage.src) {
                 sendImageToImg2Img(currentGeneratedImage.src);
-            }
-            return;
-        }
-    });
-    
-    // 为模板区域使用事件委托
-    templateContainer.addEventListener('click', (event) => {
-        const target = event.target.closest('button');
-        if (!target) return;
-        
-        console.log('Template area button clicked:', target.id, target.className);
-        
-        // 收藏模板按钮
-        if (target.id === 'favorite-template-btn' ||
-            (target.classList.contains('icon-button') && target.closest('.template-actions'))) {
-            event.preventDefault();
-            event.stopPropagation();
-            console.log('Template favorite button clicked via delegation');
-            const example = currentExamples[currentIndexOnPage];
-            if (example) {
-                console.log('Toggling favorite for template via delegation:', example);
-                toggleFavorite({ ...example, id: example.id || example.title }, 'template');
-                updateTemplateFavoriteIcon();
-            }
-            return;
-        }
-        
-        // 选择模板按钮
-        if (target.id === 'select-template-btn') {
-            event.preventDefault();
-            event.stopPropagation();
-            console.log('Select template button clicked via delegation');
-            const example = currentExamples[currentIndexOnPage];
-            if (!example) return;
-            const targetTextArea = textToImagePanel.classList.contains('active') ? promptInputText : promptInputImage;
-            if (targetTextArea) {
-                targetTextArea.value = example.prompt || '';
-                targetTextArea.focus();
             }
             return;
         }
