@@ -410,6 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 thumbItem.addEventListener('mouseenter', async (e) => {
                     cleanupPreviewInterval();
                     
+                    // 保存当前元素的引用，以便在回调中使用
+                    const currentElement = e.currentTarget;
+                    
                     const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
                     if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
                     
@@ -473,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
                                 
                                 // 设置预览器位置和显示
-                                const rect = e.currentTarget.getBoundingClientRect();
+                                const rect = currentElement.getBoundingClientRect();
                                 const previewerHeight = galleryPreviewer.offsetHeight;
                                 const spaceBelow = window.innerHeight - rect.bottom;
                                 const spaceAbove = rect.top;
@@ -1073,7 +1076,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send to img2img button clicked');
                 if (currentGeneratedImage && currentGeneratedImage.src) {
-                    sendImageToImg2Img(currentGeneratedImage.src);
+                    sendImageToImg2Img(currentGeneratedImage.src, false);
                 }
             });
             sendToImg2ImgBtn.dataset.eventBound = 'true';
@@ -1122,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send history to img2img button clicked');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src);
+                    sendImageToImg2Img(currentItemInDetailView.src, false);
                     // 关闭历史详情模态框
                     closeModal(historyDetailModal);
                 }
@@ -1151,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 发送图片到图生图功能
-    function sendImageToImg2Img(imageSrc) {
+    function sendImageToImg2Img(imageSrc, isMultiple = false) {
         console.log('Sending image to img2img:', imageSrc);
         
         // 切换到图生图标签
@@ -1184,8 +1187,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         const reader = new FileReader();
                         
                         reader.onload = (e) => {
-                            // 清空现有的上传文件
-                            uploadedFiles.length = 0;
+                            // 如果不是多图模式，清空现有的上传文件
+                            if (!isMultiple) {
+                                uploadedFiles.length = 0;
+                            }
+                            
+                            // 检查是否已达到最大上传数量
+                            const maxFiles = 5;
+                            if (uploadedFiles.length >= maxFiles) {
+                                showNotification(`最多只能上传 ${maxFiles} 张图片`, 'error');
+                                return;
+                            }
                             
                             // 添加新图片到上传文件列表
                             uploadedFiles.push({
@@ -1197,7 +1209,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             renderUploadPreviews();
                             
                             // 显示成功提示
-                            showNotification('图片已发送到图生图！', 'success');
+                            const message = isMultiple ?
+                                `已添加图片到图生图 (${uploadedFiles.length}/${maxFiles})` :
+                                '图片已发送到图生图！';
+                            showNotification(message, 'success');
                             
                             console.log('Image successfully added to img2img');
                         };
@@ -1312,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send history to img2img button clicked');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src);
+                    sendImageToImg2Img(currentItemInDetailView.src, false);
                     // 关闭历史详情模态框
                     closeModal(historyDetailModal);
                 }
@@ -2075,7 +2090,7 @@ document.addEventListener('DOMContentLoaded', () => {
             event.stopPropagation();
             console.log('Send to img2img button clicked via delegation');
             if (currentGeneratedImage && currentGeneratedImage.src) {
-                sendImageToImg2Img(currentGeneratedImage.src);
+                sendImageToImg2Img(currentGeneratedImage.src, false);
             }
             return;
         }
@@ -2126,7 +2141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 event.stopPropagation();
                 console.log('Send history to img2img button clicked via delegation');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src);
+                    sendImageToImg2Img(currentItemInDetailView.src, false);
                     closeModal(historyDetailModal);
                 }
                 return;
