@@ -120,6 +120,78 @@ document.addEventListener('DOMContentLoaded', () => {
     closeHistoryDetailModalBtn.addEventListener('click', () => closeModal(historyDetailModal));
 
     // --- 图片代理函数 ---
+    async function getProxiedImageUrlWithCache(originalUrl) {
+        // 如果没有URL，直接返回
+        if (!originalUrl) return originalUrl;
+        
+        // 如果是data URL，直接返回
+        if (originalUrl.startsWith('data:')) return originalUrl;
+        
+        // 如果是相对路径，直接返回
+        if (originalUrl.startsWith('/') && !originalUrl.startsWith('//')) return originalUrl;
+        
+        // 如果是blob URL，直接返回
+        if (originalUrl.startsWith('blob:')) return originalUrl;
+        
+        // 对于所有外部HTTP/HTTPS URL，先检查缓存
+        if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://') || originalUrl.startsWith('//')){
+            try {
+                // 尝试从缓存获取图片
+                const cachedImage = await getCachedImage(originalUrl);
+                if (cachedImage) {
+                    console.log('Using cached image for URL:', originalUrl);
+                    return cachedImage;
+                }
+                
+                // 缓存中没有，使用代理
+                console.log('Using proxy for URL:', originalUrl);
+                const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+                
+                // 预加载图片并缓存
+                const img = new Image();
+                img.onload = async () => {
+                    try {
+                        // 将图片转换为data URL并缓存
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        
+                        // 根据图片类型选择合适的格式和质量
+                        let mimeType = 'image/jpeg';
+                        let quality = 0.8;
+                        
+                        // 如果图片有透明通道，使用PNG格式
+                        if (img.src.includes('.png') || img.src.includes('.webp')) {
+                            mimeType = 'image/png';
+                            quality = 1.0;
+                        }
+                        
+                        const dataUrl = canvas.toDataURL(mimeType, quality);
+                        await cacheImage(originalUrl, dataUrl);
+                        console.log('Image cached successfully:', originalUrl);
+                    } catch (error) {
+                        console.error('Failed to cache image:', error);
+                    }
+                };
+                
+                img.onerror = () => {
+                    console.error('Failed to load image for caching:', originalUrl);
+                };
+                
+                img.src = proxyUrl;
+                return proxyUrl;
+            } catch (error) {
+                console.error('Error in image caching process:', error);
+                return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
+            }
+        }
+        
+        return originalUrl;
+    }
+    
+    // 保持原有的同步版本用于不需要缓存的地方
     function getProxiedImageUrl(originalUrl) {
         // 如果没有URL，直接返回
         if (!originalUrl) return originalUrl;
@@ -213,18 +285,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 懒加载观察器 ---
-    const lazyLoadObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
+    const lazyLoadObserver = new IntersectionObserver(async (entries, observer) => {
+        for (const entry of entries) {
             if (entry.isIntersecting) {
                 const img = entry.target;
                 const src = img.dataset.src;
                 if (src) {
-                    img.src = src;
-                    img.removeAttribute('data-src');
+                    try {
+                        // 使用带缓存的图片URL处理
+                        const cachedSrc = await getProxiedImageUrlWithCache(src);
+                        img.src = cachedSrc;
+                        img.removeAttribute('data-src');
+                    } catch (error) {
+                        console.error('Failed to load cached image:', error);
+                        // 如果缓存加载失败，回退到原始URL
+                        img.src = getProxiedImageUrl(src);
+                        img.removeAttribute('data-src');
+                    }
                 }
                 observer.unobserve(img); // Unobserve after loading
             }
-        });
+        }
     }, { rootMargin: '0px 0px 200px 0px' }); // Start loading when image is 200px away from viewport bottom
 
     // --- 灵感画廊 (性能优化版) ---
@@ -290,7 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const img = document.createElement('img');
                 img.alt = example.title;
                 img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4='; // Placeholder
-                img.dataset.src = getProxiedImageUrl(example.thumbnail);
+                img.dataset.src = example.thumbnail; // 暂时保留原始URL，在懒加载时再处理缓存
                 img.onerror = function() {
                     if (this.dataset.src && (this.dataset.src.startsWith('http') || this.dataset.src.startsWith('/'))) {
                         console.warn(`缩略图加载失败: ${this.dataset.src}`);
@@ -326,14 +407,29 @@ document.addEventListener('DOMContentLoaded', () => {
  
              // 预览器事件 - 仅在桌面端 (>1024px) 启用
              if (window.matchMedia('(min-width: 1025px) and (hover: hover)').matches) {
-                thumbItem.addEventListener('mouseenter', (e) => {
+                thumbItem.addEventListener('mouseenter', async (e) => {
                     cleanupPreviewInterval();
                     
                     const imagesToShow = [...(example.inputImages || []), ...(example.outputImages || [])].filter(Boolean);
                     if (imagesToShow.length === 0) imagesToShow.push(example.thumbnail);
                     
-                    // 使用代理URL
-                    const proxiedImages = imagesToShow.map(url => getProxiedImageUrl(url));
+                    // 使用带缓存的代理URL
+                    let proxiedImages;
+                    try {
+                        proxiedImages = await Promise.all(
+                            imagesToShow.map(async url => {
+                                try {
+                                    return await getProxiedImageUrlWithCache(url);
+                                } catch (error) {
+                                    console.error('Failed to load cached image for preview:', error);
+                                    return getProxiedImageUrl(url); // 回退到原始URL
+                                }
+                            })
+                        );
+                    } catch (error) {
+                        console.error('Failed to load preview images:', error);
+                        proxiedImages = imagesToShow.map(url => getProxiedImageUrl(url));
+                    }
 
                     // 限制预览图片数量，避免内存过度使用
                     const maxPreviewImages = 3;
@@ -445,11 +541,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 灯箱 (Lightbox) 功能 ---
-    function updateLightboxImage(index) {
+    async function updateLightboxImage(index) {
         if (!currentExamples[index]) return;
         const example = currentExamples[index];
         const highResImage = (example.outputImages && example.outputImages) || example.thumbnail;
-        lightboxImage.src = getProxiedImageUrl(highResImage);
+        
+        try {
+            // 使用带缓存的图片URL
+            const cachedImage = await getProxiedImageUrlWithCache(highResImage);
+            lightboxImage.src = cachedImage;
+        } catch (error) {
+            console.error('Failed to load cached image for lightbox:', error);
+            // 如果缓存加载失败，回退到原始URL
+            lightboxImage.src = getProxiedImageUrl(highResImage);
+        }
+        
         lightboxImage.alt = example.title;
         currentLightboxIndex = index;
 
@@ -458,9 +564,9 @@ document.addEventListener('DOMContentLoaded', () => {
         lightboxNext.style.display = index < currentExamples.length - 1 ? 'flex' : 'none';
     }
 
-    function openLightbox(index) {
+    async function openLightbox(index) {
         updateGalleryDisplay(index); // Keep the main UI updated as well
-        updateLightboxImage(index);
+        await updateLightboxImage(index);
         lightboxModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden'; // 防止背景滚动
     }
@@ -470,15 +576,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.style.overflow = '';
     }
 
-    function showNextImage() {
+    async function showNextImage() {
         if (currentLightboxIndex < currentExamples.length - 1) {
-            updateLightboxImage(currentLightboxIndex + 1);
+            await updateLightboxImage(currentLightboxIndex + 1);
         }
     }
 
-    function showPrevImage() {
+    async function showPrevImage() {
         if (currentLightboxIndex > 0) {
-            updateLightboxImage(currentLightboxIndex - 1);
+            await updateLightboxImage(currentLightboxIndex - 1);
         }
     }
 
@@ -1342,9 +1448,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = document.createElement('img');
             // 历史记录优先使用缩略图，收藏夹使用旧逻辑
             const imgSrc = type === 'history' ? item.thumbnail : (item.thumbnail || item.src || '');
-            img.src = getProxiedImageUrl(imgSrc);
+            
+            // 使用懒加载和缓存
             img.alt = 'Image';
             img.loading = 'lazy';
+            img.dataset.src = imgSrc; // 存储原始URL，在懒加载时再处理缓存
+            
+            // 设置一个占位符
+            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
             
             const p = document.createElement('p');
             p.title = item.prompt || '';
@@ -1707,7 +1818,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 初始化 ---
-    const initialize = () => {
+    const initialize = async () => {
+        // 清理过期的图片缓存
+        try {
+            await clearExpiredImageCache();
+            console.log('Expired image cache cleared');
+        } catch (error) {
+            console.error('Failed to clear expired image cache:', error);
+        }
+        
         tabTextToImage.addEventListener('click', () => switchTab(tabTextToImage, textToImagePanel));
         tabImageToImage.addEventListener('click', () => switchTab(tabImageToImage, imageToImagePanel));
 
