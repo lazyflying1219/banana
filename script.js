@@ -1154,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 发送图片到图生图功能
-    function sendImageToImg2Img(imageSrc, isMultiple = false) {
+    function sendImageToImg2Img(imageSrc, isMultiple = true) {
         console.log('Sending image to img2img:', imageSrc);
         
         // 切换到图生图标签
@@ -2165,4 +2165,5 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         document.body.appendChild(errorDiv);
     }
+
 });
