@@ -447,38 +447,62 @@ document.addEventListener('DOMContentLoaded', () => {
                         galleryPreviewer.appendChild(previewImg);
                     });
 
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const previewerHeight = galleryPreviewer.offsetHeight;
-                    const spaceBelow = window.innerHeight - rect.bottom;
-                    const spaceAbove = rect.top;
-
-                    let topPosition = window.scrollY + rect.top;
-
-                    // 如果下方空间不足，但上方空间足够，则向上显示
-                    if (spaceBelow < previewerHeight && spaceAbove > previewerHeight) {
-                        topPosition = window.scrollY + rect.bottom - previewerHeight;
-                    }
-
-                    galleryPreviewer.style.left = `${rect.right + 15}px`;
-                    galleryPreviewer.style.top = `${topPosition}px`;
-                    galleryPreviewer.classList.add('visible');
 
                     const previewImages = galleryPreviewer.querySelectorAll('img');
                     if (previewImages.length > 0) {
                         let currentPreviewIndex = 0;
-                        previewImages[currentPreviewIndex].classList.add('active-preview');
+                        
+                        // 确保至少有一张图片加载完成后再显示预览器
+                        let imagesLoaded = 0;
+                        const checkAllImagesLoaded = () => {
+                            imagesLoaded++;
+                            if (imagesLoaded === previewImages.length) {
+                                // 所有图片加载完成，显示预览器
+                                previewImages[0].classList.add('active-preview');
 
-                        if (previewImages.length > 1) {
-                            previewInterval = setInterval(() => {
-                                if (previewImages[currentPreviewIndex]) {
-                                    previewImages[currentPreviewIndex].classList.remove('active-preview');
+                                if (previewImages.length > 1) {
+                                    previewInterval = setInterval(() => {
+                                        if (previewImages[currentPreviewIndex]) {
+                                            previewImages[currentPreviewIndex].classList.remove('active-preview');
+                                        }
+                                        currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
+                                        if (previewImages[currentPreviewIndex]) {
+                                            previewImages[currentPreviewIndex].classList.add('active-preview');
+                                        }
+                                    }, 1500);
                                 }
-                                currentPreviewIndex = (currentPreviewIndex + 1) % previewImages.length;
-                                if (previewImages[currentPreviewIndex]) {
-                                    previewImages[currentPreviewIndex].classList.add('active-preview');
+                                
+                                // 设置预览器位置和显示
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const previewerHeight = galleryPreviewer.offsetHeight;
+                                const spaceBelow = window.innerHeight - rect.bottom;
+                                const spaceAbove = rect.top;
+
+                                let topPosition = window.scrollY + rect.top;
+
+                                // 如果下方空间不足，但上方空间足够，则向上显示
+                                if (spaceBelow < previewerHeight && spaceAbove > previewerHeight) {
+                                    topPosition = window.scrollY + rect.bottom - previewerHeight;
                                 }
-                            }, 1500);
-                        }
+
+                                galleryPreviewer.style.left = `${rect.right + 15}px`;
+                                galleryPreviewer.style.top = `${topPosition}px`;
+                                galleryPreviewer.classList.add('visible');
+                            }
+                        };
+                        
+                        // 为每张图片添加加载事件监听器
+                        previewImages.forEach(img => {
+                            if (img.complete) {
+                                checkAllImagesLoaded();
+                            } else {
+                                img.onload = checkAllImagesLoaded;
+                                img.onerror = () => {
+                                    console.warn(`Preview image failed to load: ${img.src}`);
+                                    checkAllImagesLoaded(); // 即使加载失败也继续
+                                };
+                            }
+                        });
                     }
                 });
                 thumbItem.addEventListener('mouseleave', () => {
@@ -928,8 +952,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     timestamp: Date.now(),
                     favoriteDate: new Date().toLocaleDateString()
                 };
+                
+                // 确保收藏项包含必要的图片信息
+                if (!favoriteItem.thumbnail && favoriteItem.src) {
+                    favoriteItem.thumbnail = favoriteItem.src;
+                }
+                
                 await addToFavoritesDB(favoriteItem);
                 console.log('已添加到收藏:', favoriteItem);
+                
+                // 如果是历史记录项，刷新收藏列表
+                if (type === 'detail' || type === 'history') {
+                    setTimeout(() => {
+                        loadFavorites();
+                    }, 300); // 给数据库操作一些时间
+                }
             }
             
             if (type === 'template') {
@@ -1449,13 +1486,19 @@ document.addEventListener('DOMContentLoaded', () => {
             // 历史记录优先使用缩略图，收藏夹使用旧逻辑
             const imgSrc = type === 'history' ? item.thumbnail : (item.thumbnail || item.src || '');
             
-            // 使用懒加载和缓存
+            // 对于历史记录和收藏，直接使用同步版本的getProxiedImageUrl
+            // 因为这些图片需要立即显示，而不是懒加载
             img.alt = 'Image';
-            img.loading = 'lazy';
-            img.dataset.src = imgSrc; // 存储原始URL，在懒加载时再处理缓存
-            
-            // 设置一个占位符
-            img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODUiIGhlaWdodD0iODUiIHZpZXdCb3g9IjAgMCA4NSA4NSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODUiIGhlaWdodD0iODUiIGZpbGw9IiNlYWVhZWEiLz48L3N2Zz4=';
+            img.src = getProxiedImageUrl(imgSrc);
+            img.onerror = function() {
+                console.warn(`Grid image load failed: ${imgSrc}`);
+                // 加载失败时显示默认图标
+                this.style.display = 'none';
+                const iconDiv = document.createElement('div');
+                iconDiv.innerHTML = '🖼️';
+                iconDiv.style.cssText = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 100px; font-size: 2em; background-color: var(--bg-color); border-radius: var(--border-radius-small);';
+                this.parentNode.appendChild(iconDiv);
+            };
             
             const p = document.createElement('p');
             p.title = item.prompt || '';
