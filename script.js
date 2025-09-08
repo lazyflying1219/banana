@@ -806,6 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existingIndex > -1) {
             // 取消收藏
             favorites.splice(existingIndex, 1);
+            console.log('已从收藏中移除:', itemId);
         } else {
             // 添加收藏，包含时间戳
             const favoriteItem = {
@@ -816,6 +817,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 favoriteDate: new Date().toLocaleDateString()
             };
             favorites.unshift(favoriteItem);
+            console.log('已添加到收藏:', favoriteItem);
         }
         
         // 限制收藏数量
@@ -830,7 +832,10 @@ document.addEventListener('DOMContentLoaded', () => {
             updateResultFavoriteIcon();
         } else if (type === 'detail') {
             // 更新历史记录详情视图的收藏图标
-            updateFavoriteIcon(favoriteHistoryDetailBtn, currentItemInDetailView);
+            const favoriteBtn = document.getElementById('favorite-history-detail-btn');
+            if (favoriteBtn) {
+                updateFavoriteIcon(favoriteBtn, item);
+            }
         }
     }
 
@@ -1098,10 +1103,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('History detail favorite button clicked');
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail:', currentItemInDetailView);
-                    toggleFavorite(currentItemInDetailView, 'detail');
+                    // 确保项目有正确的ID和类型
+                    const itemToFavorite = {
+                        ...currentItemInDetailView,
+                        sourceType: 'history' // 明确标记来源类型
+                    };
+                    toggleFavorite(itemToFavorite, 'detail');
                     // 延迟更新图标状态，确保收藏状态已保存
                     setTimeout(() => {
-                        updateFavoriteIcon(newFavoriteBtn, currentItemInDetailView);
+                        updateFavoriteIcon(newFavoriteBtn, itemToFavorite);
                     }, 100);
                 }
             });
@@ -1387,8 +1397,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 gridItem.appendChild(timeInfo);
             }
             
-            gridItem.appendChild(img);
-            gridItem.appendChild(p);
+            // 创建图片容器
+            const imageContainer = document.createElement('div');
+            imageContainer.className = 'grid-item-image-container';
+            imageContainer.appendChild(img);
+            
+            // 创建内容容器
+            const contentContainer = document.createElement('div');
+            contentContainer.className = 'grid-item-content';
+            contentContainer.appendChild(p);
+            
+            gridItem.appendChild(imageContainer);
+            gridItem.appendChild(contentContainer);
             gridItem.appendChild(deleteBtn);
             fragment.appendChild(gridItem);
         });
