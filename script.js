@@ -136,6 +136,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return `/api/proxy-image?url=${encodeURIComponent(originalUrl)}`;
         }
         
+        // 如果是blob URL，直接返回
+        if (originalUrl.startsWith('blob:')) return originalUrl;
+        
         return originalUrl;
     }
 
@@ -794,72 +797,84 @@ document.addEventListener('DOMContentLoaded', () => {
     generateBtn.addEventListener('click', generateImage);
 
     // --- 收藏功能 (模板与结果) ---
-    function toggleFavorite(item, type) {
-        let favorites = getStorage('favorites');
+    async function toggleFavorite(item, type) {
         const itemId = item.id || item.title || item.src;
         if (!itemId) {
             console.warn('无法收藏，因为项目没有有效ID:', item);
             return;
         }
         
-        const existingIndex = favorites.findIndex(fav => fav.id === itemId);
-        if (existingIndex > -1) {
-            // 取消收藏
-            favorites.splice(existingIndex, 1);
-            console.log('已从收藏中移除:', itemId);
-        } else {
-            // 添加收藏，包含时间戳
-            const favoriteItem = {
-                ...item,
-                type: type === 'detail' ? (item.sourceType || 'history') : type, // 保持原始来源类型
-                id: itemId,
-                timestamp: Date.now(),
-                favoriteDate: new Date().toLocaleDateString()
-            };
-            favorites.unshift(favoriteItem);
-            console.log('已添加到收藏:', favoriteItem);
-        }
-        
-        // 限制收藏数量
-        if (favorites.length > 200) {
-            favorites = favorites.slice(0, 200);
-        }
-        
-        setStorage('favorites', favorites);
-        if (type === 'template') {
-            updateTemplateFavoriteIcon();
-        } else if (type === 'result') {
-            updateResultFavoriteIcon();
-        } else if (type === 'detail') {
-            // 更新历史记录详情视图的收藏图标
-            const favoriteBtn = document.getElementById('favorite-history-detail-btn');
-            if (favoriteBtn) {
-                updateFavoriteIcon(favoriteBtn, item);
+        try {
+            // 检查是否已经收藏
+            const favorites = await getFavoritesDB();
+            const existingIndex = favorites.findIndex(fav => fav.id === itemId);
+            
+            if (existingIndex > -1) {
+                // 取消收藏
+                await deleteFromFavoritesDB(itemId);
+                console.log('已从收藏中移除:', itemId);
+            } else {
+                // 添加收藏，包含时间戳
+                const favoriteItem = {
+                    ...item,
+                    type: type === 'detail' ? (item.sourceType || 'history') : type, // 保持原始来源类型
+                    id: itemId,
+                    timestamp: Date.now(),
+                    favoriteDate: new Date().toLocaleDateString()
+                };
+                await addToFavoritesDB(favoriteItem);
+                console.log('已添加到收藏:', favoriteItem);
             }
+            
+            if (type === 'template') {
+                updateTemplateFavoriteIcon();
+            } else if (type === 'result') {
+                updateResultFavoriteIcon();
+            } else if (type === 'detail') {
+                // 更新历史记录详情视图的收藏图标
+                const favoriteBtn = document.getElementById('favorite-history-detail-btn');
+                if (favoriteBtn) {
+                    updateFavoriteIcon(favoriteBtn, item);
+                }
+            }
+        } catch (error) {
+            console.error('收藏操作失败:', error);
+            // 显示错误提示
+            showNotification('收藏操作失败，请重试', 'error');
         }
     }
 
-    function updateFavoriteIcon(button, item) {
+    async function updateFavoriteIcon(button, item) {
         if (!button || !item) return;
-        const itemId = item.id || item.title || item.src;
-        const favorites = getStorage('favorites');
-        const isFavorited = favorites.some(fav => fav.id === itemId);
-        button.classList.toggle('favorited', isFavorited);
+        try {
+            const itemId = item.id || item.title || item.src;
+            const favorites = await getFavoritesDB();
+            const isFavorited = favorites.some(fav => fav.id === itemId);
+            button.classList.toggle('favorited', isFavorited);
+        } catch (error) {
+            console.error('更新收藏图标失败:', error);
+        }
     }
 
-    function updateTemplateFavoriteIcon() {
+    async function updateTemplateFavoriteIcon() {
         const example = currentExamples[currentIndexOnPage];
         const btn = document.getElementById('favorite-template-btn');
-        if (example && btn) updateFavoriteIcon(btn, example);
+        if (example && btn) await updateFavoriteIcon(btn, example);
     }
     
-    function updateResultFavoriteIcon() {
+    async function updateResultFavoriteIcon() {
         const btn = document.getElementById('favorite-result-btn');
-        if (currentGeneratedImage && btn) updateFavoriteIcon(btn, currentGeneratedImage);
+        if (currentGeneratedImage && btn) await updateFavoriteIcon(btn, currentGeneratedImage);
     }
 
-    function loadFavorites() {
-        renderGrid(favoritesGrid, getStorage('favorites'), '暂无收藏', 'favorites');
+    async function loadFavorites() {
+        try {
+            const favorites = await getFavoritesDB();
+            renderGrid(favoritesGrid, favorites, '暂无收藏', 'favorites');
+        } catch (error) {
+            console.error('加载收藏失败:', error);
+            favoritesGrid.innerHTML = '<p>无法加载收藏。</p>';
+        }
     }
 
     function setupEventListeners() {
@@ -877,8 +892,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const example = currentExamples[currentIndexOnPage];
                 if (example) {
                     console.log('Toggling favorite for template:', example);
-                    toggleFavorite({ ...example, id: example.id || example.title }, 'template');
-                    updateTemplateFavoriteIcon();
+                    toggleFavorite({ ...example, id: example.id || example.title }, 'template').then(() => {
+                        updateTemplateFavoriteIcon();
+                    });
                 }
             });
             templateBtn.dataset.eventBound = 'true';
@@ -897,8 +913,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('Result favorite button clicked');
                 if (currentGeneratedImage) {
                     console.log('Toggling favorite for result:', currentGeneratedImage);
-                    toggleFavorite(currentGeneratedImage, 'result');
-                    updateResultFavoriteIcon();
+                    toggleFavorite(currentGeneratedImage, 'result').then(() => {
+                        updateResultFavoriteIcon();
+                    });
                 } else {
                     console.warn('No current generated image to favorite');
                 }
@@ -1003,44 +1020,64 @@ document.addEventListener('DOMContentLoaded', () => {
             // 切换标签
             switchTab(tabImageToImage, imageToImagePanel);
             
-            // 将图片添加到上传文件列表
-            fetch(imageSrc)
-                .then(response => response.blob())
-                .then(blob => {
-                    // 创建File对象
-                    const file = new File([blob], `image_${Date.now()}.png`, { type: 'image/png' });
-                    const reader = new FileReader();
-                    
-                    reader.onload = (e) => {
-                        // 清空现有的上传文件
-                        uploadedFiles.length = 0;
+            // 确保图片URL是完整的，如果是相对路径则转换为绝对路径
+            const processedSrc = getProxiedImageUrl(imageSrc);
+            console.log('Processed image URL:', processedSrc);
+            
+            // 先测试图片是否可以加载
+            const testImg = new Image();
+            testImg.onload = () => {
+                // 图片加载成功，继续处理
+                fetch(processedSrc)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // 创建File对象
+                        const file = new File([blob], `image_${Date.now()}.png`, { type: 'image/png' });
+                        const reader = new FileReader();
                         
-                        // 添加新图片到上传文件列表
-                        uploadedFiles.push({
-                            file: file,
-                            dataUrl: e.target.result
-                        });
+                        reader.onload = (e) => {
+                            // 清空现有的上传文件
+                            uploadedFiles.length = 0;
+                            
+                            // 添加新图片到上传文件列表
+                            uploadedFiles.push({
+                                file: file,
+                                dataUrl: e.target.result
+                            });
+                            
+                            // 重新渲染上传预览
+                            renderUploadPreviews();
+                            
+                            // 显示成功提示
+                            showNotification('图片已发送到图生图！', 'success');
+                            
+                            console.log('Image successfully added to img2img');
+                        };
                         
-                        // 重新渲染上传预览
-                        renderUploadPreviews();
+                        reader.onerror = () => {
+                            console.error('Failed to read image data');
+                            showNotification('读取图片数据失败，请重试', 'error');
+                        };
                         
-                        // 显示成功提示
-                        showNotification('图片已发送到图生图！', 'success');
-                        
-                        console.log('Image successfully added to img2img');
-                    };
-                    
-                    reader.onerror = () => {
-                        console.error('Failed to read image data');
-                        showNotification('发送图片失败，请重试', 'error');
-                    };
-                    
-                    reader.readAsDataURL(file);
-                })
-                .catch(error => {
-                    console.error('Failed to fetch image:', error);
-                    showNotification('发送图片失败，请重试', 'error');
-                });
+                        reader.readAsDataURL(file);
+                    })
+                    .catch(error => {
+                        console.error('Failed to fetch image:', error);
+                        showNotification('获取图片失败，请重试', 'error');
+                    });
+            };
+            
+            testImg.onerror = () => {
+                console.error('Failed to load image:', processedSrc);
+                showNotification('图片加载失败，请重试', 'error');
+            };
+            
+            testImg.src = processedSrc;
         }
     }
 
@@ -1220,9 +1257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('确定要删除这个项目吗？')) return;
         
         if (type === 'favorites') {
-            let items = getStorage('favorites');
-            items = items.filter(item => item.id !== itemId);
-            setStorage('favorites', items);
+            await deleteFromFavoritesDB(itemId);
             loadFavorites();
         } else {
             await deleteFromHistoryDB(itemId);
@@ -1238,10 +1273,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 清空所有收藏
-    function clearAllFavorites() {
+    async function clearAllFavorites() {
         if (!confirm('确定要清空所有收藏吗？此操作不可恢复。')) return;
-        
-        setStorage('favorites', []);
+        await clearFavoritesDB();
         loadFavorites();
     }
 
@@ -1364,28 +1398,69 @@ document.addEventListener('DOMContentLoaded', () => {
                     sourceType: type // 添加来源类型标识
                 };
 
-                historyDetailImage.src = getProxiedImageUrl(fullSrc);
-                historyDetailPrompt.textContent = item.prompt;
+                // 确保图片URL是完整的，如果是相对路径则转换为绝对路径
+                const processedSrc = getProxiedImageUrl(fullSrc);
                 
-                // 根据来源类型设置模态框标题
-                const titleElement = document.getElementById('history-detail-title');
-                if (titleElement) {
-                    titleElement.textContent = type === 'favorites' ? '收藏详情' : '历史记录详情';
-                }
-                
-                // 重新绑定按钮事件
-                setupHistoryDetailButtons();
-                
-                downloadHistoryDetailBtn.onclick = () => {
-                    const link = document.createElement('a');
-                    link.href = fullSrc;
-                    link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                };
+                // 对于收藏中的图片，确保URL是可访问的
+                if (type === 'favorites' && processedSrc) {
+                    // 预加载图片以确保URL有效
+                    const testImg = new Image();
+                    testImg.onload = () => {
+                        // 图片加载成功，设置详情模态框
+                        historyDetailImage.src = processedSrc;
+                        historyDetailPrompt.textContent = item.prompt;
+                        
+                        // 根据来源类型设置模态框标题
+                        const titleElement = document.getElementById('history-detail-title');
+                        if (titleElement) {
+                            titleElement.textContent = type === 'favorites' ? '收藏详情' : '历史记录详情';
+                        }
+                        
+                        // 重新绑定按钮事件
+                        setupHistoryDetailButtons();
+                        
+                        downloadHistoryDetailBtn.onclick = () => {
+                            const link = document.createElement('a');
+                            link.href = processedSrc;
+                            link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        };
 
-                openModal(historyDetailModal);
+                        openModal(historyDetailModal);
+                    };
+                    testImg.onerror = () => {
+                        // 图片加载失败，显示错误提示
+                        showNotification('无法加载图片，请重试', 'error');
+                        console.error('Failed to load image from favorites:', processedSrc);
+                    };
+                    testImg.src = processedSrc;
+                } else {
+                    // 对于历史记录或其他类型，直接显示
+                    historyDetailImage.src = processedSrc;
+                    historyDetailPrompt.textContent = item.prompt;
+                    
+                    // 根据来源类型设置模态框标题
+                    const titleElement = document.getElementById('history-detail-title');
+                    if (titleElement) {
+                        titleElement.textContent = type === 'favorites' ? '收藏详情' : '历史记录详情';
+                    }
+                    
+                    // 重新绑定按钮事件
+                    setupHistoryDetailButtons();
+                    
+                    downloadHistoryDetailBtn.onclick = () => {
+                        const link = document.createElement('a');
+                        link.href = processedSrc;
+                        link.download = `nano-banana-${type}-${currentItemInDetailView.id}.png`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    };
+
+                    openModal(historyDetailModal);
+                }
             });
             
             // 添加时间信息（如果有）
@@ -1727,20 +1802,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // 导出收藏
     const exportFavoritesBtn = document.getElementById('export-favorites-btn');
     if (exportFavoritesBtn) {
-        exportFavoritesBtn.addEventListener('click', () => {
-            const favorites = getStorage('favorites');
-            const filename = `nano-banana-favorites-${new Date().toISOString().split('T')[0]}.json`;
-            exportData(favorites, filename);
+        exportFavoritesBtn.addEventListener('click', async () => {
+            try {
+                const favorites = await getFavoritesDB();
+                const filename = `nano-banana-favorites-${new Date().toISOString().split('T')[0]}.json`;
+                exportData(favorites, filename);
+            } catch (error) {
+                console.error('导出收藏失败:', error);
+                showNotification('导出收藏失败，请重试', 'error');
+            }
         });
     }
 
     // 导出历史记录
     const exportHistoryBtn = document.getElementById('export-history-btn');
     if (exportHistoryBtn) {
-        exportHistoryBtn.addEventListener('click', () => {
-            const history = getStorage('history');
-            const filename = `nano-banana-history-${new Date().toISOString().split('T')[0]}.json`;
-            exportData(history, filename);
+        exportHistoryBtn.addEventListener('click', async () => {
+            try {
+                const history = await getHistoryDB();
+                const filename = `nano-banana-history-${new Date().toISOString().split('T')[0]}.json`;
+                exportData(history, filename);
+            } catch (error) {
+                console.error('导出历史记录失败:', error);
+                showNotification('导出历史记录失败，请重试', 'error');
+            }
         });
     }
 
@@ -1799,8 +1884,9 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Result favorite button clicked via delegation');
             if (currentGeneratedImage) {
                 console.log('Toggling favorite for result via delegation:', currentGeneratedImage);
-                toggleFavorite(currentGeneratedImage, 'result');
-                updateResultFavoriteIcon();
+                toggleFavorite(currentGeneratedImage, 'result').then(() => {
+                    updateResultFavoriteIcon();
+                });
             }
             return;
         }
@@ -1849,8 +1935,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('History detail favorite button clicked via delegation');
                 if (currentItemInDetailView) {
                     console.log('Toggling favorite for history detail via delegation:', currentItemInDetailView);
-                    toggleFavorite(currentItemInDetailView, 'detail');
-                    updateFavoriteIcon(target, currentItemInDetailView);
+                    toggleFavorite(currentItemInDetailView, 'detail').then(() => {
+                        updateFavoriteIcon(target, currentItemInDetailView);
+                    });
                 }
                 return;
             }
