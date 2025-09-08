@@ -29,9 +29,20 @@ export async function onRequest(context) {
       return new Response('Missing url parameter', { status: 400 });
     }
 
-    // 验证URL是否来自允许的GitHub仓库
+    let targetUrl;
+    try {
+      targetUrl = new URL(imageUrl);
+    } catch (e) {
+      return new Response('Invalid URL', { status: 400 });
+    }
+
+    // 验证URL是否来自允许的GitHub仓库或其他允许的域名
     const allowedDomains = [
-      'raw.githubusercontent.com'
+      'raw.githubusercontent.com',
+      'github.com',
+      'user-images.githubusercontent.com',
+      'veloe.onrender.com', // 添加API域名
+      'banana-6ot.pages.dev' // 添加当前应用域名
     ];
     
     const allowedRepos = [
@@ -40,25 +51,17 @@ export async function onRequest(context) {
       'jamez-bondos/awesome-gpt4o-images'
     ];
 
-    let targetUrl;
-    try {
-      targetUrl = new URL(imageUrl);
-    } catch (e) {
-      return new Response('Invalid URL', { status: 400 });
+    // 如果是允许的域名，直接允许代理
+    if (allowedDomains.includes(targetUrl.hostname)) {
+      // 对于这些域名，直接允许，无需进一步检查
     }
-
-    // 检查域名
-    if (!allowedDomains.includes(targetUrl.hostname)) {
+    // 如果是data URL，直接返回错误，因为不需要代理
+    else if (imageUrl.startsWith('data:')) {
+      return new Response('Data URLs do not need proxy', { status: 400 });
+    }
+    // 如果是其他域名，不允许代理
+    else {
       return new Response('Domain not allowed', { status: 403 });
-    }
-
-    // 检查仓库路径
-    const isAllowedRepo = allowedRepos.some(repo => 
-      targetUrl.pathname.startsWith(`/${repo}/`)
-    );
-    
-    if (!isAllowedRepo) {
-      return new Response('Repository not allowed', { status: 403 });
     }
 
     // 获取原始图片
