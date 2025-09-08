@@ -756,7 +756,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const qualityEnhancers = "4K, HDR, high detail, sharp focus";
             
             if (hasAspectRatioImage) {
-                let imageInstructions = "你是一位专业的图像合成师。请严格遵循以下指令：\n";
+                let imageInstructions = "你是一位专业的图像生成师。请严格遵循以下指令：\n";
                 imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为"画布"）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
 
                 if (hasUserImages) {
@@ -829,23 +829,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             } else {
                 // 检查是否是只有文本返回的情况
-                if (result.text || result.content || result.response) {
-                    // 如果是第一次重试，自动重试
-                    if (retryCount === 0) {
-                        console.log('Model returned text instead of image, auto-retrying...');
-                        // 创建一个特殊的错误对象，标记为文本响应错误
-                        const textError = new Error('Model returned text instead of image');
-                        textError.isTextResponseError = true;
-                        throw textError;
-                    } else {
-                        // 如果是第二次重试，提示用户更改提示词
-                        const textError = new Error('Model returned text instead of image. Please try modifying your prompt to be more specific about the image you want to generate.');
-                        textError.isTextResponseError = true;
-                        throw textError;
+                // 检查API返回的错误信息
+                if (result.error && result.error === 'API响应中未找到图片数据') {
+                    // 检查是否有文本响应
+                    if (result.responseText || result.rawResponse?.choices?.[0]?.message?.content) {
+                        const textContent = result.responseText || result.rawResponse.choices[0].message.content;
+                        if (textContent && textContent.length > 0 && !textContent.includes('data:image')) {
+                            // 这是一个文本响应错误
+                            if (retryCount === 0) {
+                                console.log('Model returned text instead of image, auto-retrying...');
+                                // 创建一个特殊的错误对象，标记为文本响应错误
+                                const textError = new Error('Model returned text instead of image');
+                                textError.isTextResponseError = true;
+                                throw textError;
+                            } else {
+                                // 如果是第二次重试，提示用户更改提示词
+                                const textError = new Error('Model returned text instead of image. Please try modifying your prompt to be more specific about the image you want to generate.');
+                                textError.isTextResponseError = true;
+                                throw textError;
+                            }
+                        }
                     }
-                } else {
-                    throw new Error('API 返回数据中未找到图片');
                 }
+                // 其他情况，抛出普通错误
+                throw new Error(result.error || 'API 返回数据中未找到图片');
             }
 
         } catch (error) {
@@ -855,8 +862,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (retryCount < maxRetries && shouldRetry(error)) {
                 console.log(`准备进行第 ${retryCount + 1} 次重试...`);
                 
-                // 固定延迟20秒
-                const delay = 20000; // 20秒
+                // 固定延迟60秒
+                const delay = 60000; // 60秒
                 await new Promise(resolve => setTimeout(resolve, delay));
                 
                 // 递归重试，传递错误类型
@@ -864,7 +871,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // 所有重试都失败了，显示错误信息
-            handleGenerationError(error, retryCount);
+            // 保存原始错误数据
+            const errorWithData = error;
+            if (!error.errorData && error.error) {
+                errorWithData.errorData = error.error;
+            }
+            handleGenerationError(errorWithData, retryCount);
         }
     }
 
@@ -905,15 +917,18 @@ document.addEventListener('DOMContentLoaded', () => {
         generateBtn.textContent = '生成';
         generateBtn.disabled = false;
         
+        // 从错误对象中获取详细信息
+        const errorData = error.errorData || error;
+        
         // 详细的错误信息用于调试
         let errorDetails = {
             message: error.message || '未知错误',
             stack: error.stack || '无堆栈信息',
             name: error.name || '未知错误类型',
-            error: error.error || null,
-            details: error.details || null,
-            rawResponse: error.rawResponse || null,
-            responseText: error.responseText || null,
+            error: errorData.error || null,
+            details: errorData.details || null,
+            rawResponse: errorData.rawResponse || null,
+            responseText: errorData.responseText || null,
             totalRetries: finalRetryCount,
             isTextResponseError: error.isTextResponseError || false
         };
@@ -939,10 +954,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 第一次重试，显示自动重试信息
                 displayMessage = '模型返回了文本而非图片，正在自动重试...';
             }
-        } else if (finalRetryCount > 0) {
-            // 其他错误，显示重试次数
+        } else {
+            // 其他错误的处理
             const maxOtherRetries = 3; // 其他错误最多重试3次
-            displayMessage += ` (已自动重试 ${finalRetryCount}/${maxOtherRetries} 次)`;
+            displayMessage += ` (尝试 ${finalRetryCount + 1}/${maxOtherRetries})`;
         }
         
         const errorDiv = document.createElement('div');
