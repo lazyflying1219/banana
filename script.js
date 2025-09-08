@@ -747,18 +747,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasUserImages = uploadedFiles && uploadedFiles.length > 0;
             const hasAspectRatioImage = baseImage && selectedRatio !== '1:1';
 
+            // 添加图片质量增强词
+            const qualityEnhancers = "4K, HDR, high detail, sharp focus";
+            
             if (hasAspectRatioImage) {
                 let imageInstructions = "你是一位专业的图像合成师。请严格遵循以下指令：\n";
-                imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为“画布”）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
+                imageInstructions += `- **重要**: 你接收到的最后一张图片是宽高比参考图（我们称之为"画布"）。它的现有内容必须被完全忽略和清除，只使用它的宽高比（${selectedRatio}）作为最终输出的画框。\n`;
 
                 if (hasUserImages) {
                     const userImageCount = uploadedFiles.length;
-                    imageInstructions += `- 你接收到的前 ${userImageCount} 张图片是内容源。你的任务是将这些源图片的内容、风格、元素智能地融合、重绘到空白的“画布”上，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
+                    imageInstructions += `- 你接收到的前 ${userImageCount} 张图片是内容源。你的任务是将这些源图片的内容、风格、元素智能地融合、重绘到空白的"画布"上，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 } else {
-                    imageInstructions += `- 你的任务是根据用户的文本提示词，在空白的“画布”上生成全新的内容，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
+                    imageInstructions += `- 你的任务是根据用户的文本提示词，在空白的"画布"上生成全新的内容，并完美地填充至 ${selectedRatio} 的宽高比。\n`;
                 }
                 imageInstructions += `- 最终生成的图片必须内容完整，填满整个画布，绝不留下任何边框或空白区域。\n`;
-                enhancedPrompt = `${imageInstructions}\n用户的原始需求是：“${prompt}”`;
+                imageInstructions += `- 确保生成的图片具有高质量：${qualityEnhancers}。\n`;
+                enhancedPrompt = `${imageInstructions}\n用户的原始需求是："${prompt}"`;
 
                 // 将底图转换为Data URL并添加到图片列表的末尾
                 const baseImageAsDataUrl = await imageToDataUrl(baseImage);
@@ -772,10 +776,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (selectedRatio) {
                 const ratioConfig = ASPECT_RATIOS[selectedRatio];
                 if (hasUserImages) {
-                     enhancedPrompt = `请基于用户上传的图片，根据以下需求进行修改或重绘，最终输出一张 ${ratioConfig.description}(${selectedRatio}) 的图片。\n\n用户的需求是：“${prompt}”`;
+                     enhancedPrompt = `请基于用户上传的图片，根据以下需求进行修改或重绘，最终输出一张 ${ratioConfig.description}(${selectedRatio}) 的图片。确保图片具有高质量：${qualityEnhancers}。\n\n用户的需求是："${prompt}"`;
                 } else {
-                    enhancedPrompt = `请根据用户的需求生成一张图片。最终图片的宽高比必须为 ${ratioConfig.description} (${selectedRatio})。请确保内容完整并填满整个画面，不要留有边框。\n\n用户的需求是：“${prompt}”`;
+                    enhancedPrompt = `请根据用户的需求生成一张图片。最终图片的宽高比必须为 ${ratioConfig.description} (${selectedRatio})。请确保内容完整并填满整个画面，不要留有边框。确保图片具有高质量：${qualityEnhancers}。\n\n用户的需求是："${prompt}"`;
                 }
+            } else {
+                // 即使没有指定比例，也添加质量增强词
+                enhancedPrompt = `请根据用户的需求生成一张高质量图片。确保图片具有：${qualityEnhancers}。\n\n用户的需求是："${prompt}"`;
             }
             
             // 构建请求体，不再需要单独的 baseImage 和 aspectRatio 字段
