@@ -1076,7 +1076,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send to img2img button clicked');
                 if (currentGeneratedImage && currentGeneratedImage.src) {
-                    sendImageToImg2Img(currentGeneratedImage.src, false);
+                    sendImageToImg2Img(currentGeneratedImage.src, true);
                 }
             });
             sendToImg2ImgBtn.dataset.eventBound = 'true';
@@ -1125,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send history to img2img button clicked');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src, false);
+                    sendImageToImg2Img(currentItemInDetailView.src, true);
                     // 关闭历史详情模态框
                     closeModal(historyDetailModal);
                 }
@@ -1327,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 console.log('Send history to img2img button clicked');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src, false);
+                    sendImageToImg2Img(currentItemInDetailView.src, true);
                     // 关闭历史详情模态框
                     closeModal(historyDetailModal);
                 }
@@ -2090,7 +2090,7 @@ document.addEventListener('DOMContentLoaded', () => {
             event.stopPropagation();
             console.log('Send to img2img button clicked via delegation');
             if (currentGeneratedImage && currentGeneratedImage.src) {
-                sendImageToImg2Img(currentGeneratedImage.src, false);
+                sendImageToImg2Img(currentGeneratedImage.src, true);
             }
             return;
         }
@@ -2141,7 +2141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 event.stopPropagation();
                 console.log('Send history to img2img button clicked via delegation');
                 if (currentItemInDetailView && currentItemInDetailView.src) {
-                    sendImageToImg2Img(currentItemInDetailView.src, false);
+                    sendImageToImg2Img(currentItemInDetailView.src, true);
                     closeModal(historyDetailModal);
                 }
                 return;
