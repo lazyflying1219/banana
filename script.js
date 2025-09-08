@@ -1193,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             
                             // 检查是否已达到最大上传数量
-                            const maxFiles = 5;
+                            const maxFiles = 9;
                             if (uploadedFiles.length >= maxFiles) {
                                 showNotification(`最多只能上传 ${maxFiles} 张图片`, 'error');
                                 return;
@@ -1684,7 +1684,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function handleFiles(files) {
-        const maxFiles = 5;
+        const maxFiles = 9;
         const maxSize = 10 * 1024 * 1024; // 10MB
         
         if (uploadedFiles.length + files.length > maxFiles) {
@@ -2167,3 +2167,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 });
+
