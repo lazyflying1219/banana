@@ -249,16 +249,14 @@ export async function onRequest(context) {
         } else if (retryCount < maxRetries) {
           console.log('未找到图片，准备重试...');
           retryCount++;
-          // 延迟20秒后重试
-          await new Promise(resolve => setTimeout(resolve, 20000));
+          // 不添加延迟，让前端控制重试时间
           continue;
         }
       } catch (error) {
         console.error(`${retryCount === 0 ? '首次' : '重试'}请求失败:`, error);
         if (retryCount < maxRetries) {
           retryCount++;
-          // 延迟20秒后重试
-          await new Promise(resolve => setTimeout(resolve, 20000));
+          // 不添加延迟，让前端控制重试时间
           continue;
         }
         throw error;
