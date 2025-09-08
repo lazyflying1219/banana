@@ -56,7 +56,7 @@ export async function onRequest(context) {
       }],
       max_tokens: 8192, // 增加token限制以容纳图片数据
       temperature: 0.7,
-      stream: false,
+      stream: true,
       // Gemini特有参数
       top_p: 0.95,
       top_k: 40
@@ -112,150 +112,166 @@ export async function onRequest(context) {
     // 使用正确的完整API端点
     let apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
-    // 尝试两种方式：流式和非流式
+    // 直接使用流式请求，如果没有找到图片则重试一次
     let apiResponse;
     let responseData;
+    let retryCount = 0;
+    const maxRetries = 1; // 最多重试1次
+    let imageFound = false;
 
-    try {
-      // 方式1: 非流式请求
-      console.log('发送API请求到:', apiUrl);
-      console.log('请求体:', JSON.stringify(forwardBody, null, 2));
-      
-      // 添加超时控制
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
-      
+    while (retryCount <= maxRetries) {
       try {
-        apiResponse = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(forwardBody),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          throw new Error('API请求超时，请稍后重试');
+        const attempt = retryCount === 0 ? '首次' : '重试';
+        console.log(`发送${attempt}流式API请求到:`, apiUrl);
+        console.log('请求体:', JSON.stringify(forwardBody, null, 2));
+        
+        // 添加超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+        
+        try {
+          apiResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(forwardBody),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          if (fetchError.name === 'AbortError') {
+            throw new Error('API请求超时，请稍后重试');
+          }
+          throw fetchError;
         }
-        throw fetchError;
-      }
 
-      console.log('API响应状态:', apiResponse.status);
+        console.log('API响应状态:', apiResponse.status);
 
-      if (!apiResponse.ok) {
-        const errorText = await apiResponse.text();
-        console.error('API错误响应:', errorText);
-        throw new Error(`HTTP ${apiResponse.status}: ${errorText}`);
-      }
+        if (!apiResponse.ok) {
+          const errorText = await apiResponse.text();
+          console.error('API错误响应:', errorText);
+          throw new Error(`HTTP ${apiResponse.status}: ${errorText}`);
+        }
 
-      responseData = await apiResponse.json();
-      console.log('API响应数据长度:', JSON.stringify(responseData).length);
+        // 处理流式响应
+        const reader = apiResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+        let buffer = '';
+        imageFound = false; // 重置图片标记
 
-      // 检查是否有完整的图片数据
-      const hasCompleteImage = JSON.stringify(responseData).includes('data:image') &&
-        JSON.stringify(responseData).match(/data:image\/[^"]+/);
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-      // 如果没有完整图片数据，尝试流式请求
-      if (!hasCompleteImage) {
-        console.log('No complete image found, trying streaming...');
-        const streamBody = { ...forwardBody, stream: true };
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
 
-        const streamResponse = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(streamBody),
-        });
+            // 保留最后一行（可能不完整）
+            buffer = lines.pop() || '';
 
-        if (streamResponse.ok) {
-          // 处理流式响应
-          const reader = streamResponse.body.getReader();
-          const decoder = new TextDecoder();
-          let fullContent = '';
-          let buffer = '';
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-
-              // 保留最后一行（可能不完整）
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                  try {
-                    const jsonStr = line.slice(6).trim();
-                    if (jsonStr) {
-                      const data = JSON.parse(jsonStr);
-                      if (data.choices && data.choices[0]?.delta?.content) {
-                        fullContent += data.choices[0].delta.content;
+            for (const line of lines) {
+              if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                try {
+                  const jsonStr = line.slice(6).trim();
+                  if (jsonStr) {
+                    const data = JSON.parse(jsonStr);
+                    if (data.choices && data.choices[0]?.delta?.content) {
+                      const content = data.choices[0].delta.content;
+                      fullContent += content;
+                      
+                      // 检查是否包含图片数据
+                      if (content.includes('data:image')) {
+                        imageFound = true;
+                        console.log('Image data detected in stream');
                       }
                     }
-                  } catch (e) {
-                    // 忽略解析错误，继续处理
-                    console.log('Parse error for line:', line.slice(0, 100));
                   }
+                } catch (e) {
+                  // 忽略解析错误，继续处理
+                  console.log('Parse error for line:', line.slice(0, 100));
                 }
               }
             }
-
-            // 处理剩余的buffer
-            if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
-              try {
-                const jsonStr = buffer.slice(6).trim();
-                if (jsonStr) {
-                  const data = JSON.parse(jsonStr);
-                  if (data.choices && data.choices[0]?.delta?.content) {
-                    fullContent += data.choices[0].delta.content;
-                  }
-                }
-              } catch (e) {
-                console.log('Parse error for final buffer');
-              }
-            }
-
-            console.log('Stream content length:', fullContent.length);
-
-            // 构造完整响应
-            if (fullContent.length > 0) {
-              responseData = {
-                choices: [{
-                  message: {
-                    content: fullContent
-                  }
-                }],
-                usage: {
-                  completion_tokens: fullContent.length
-                }
-              };
-            }
-          } catch (streamError) {
-            console.log('Stream processing error:', streamError.message);
           }
-        }
-      }
-    } catch (streamError) {
-      // 如果流式请求失败，继续使用原始响应
-      console.log('Stream request failed, using original response');
-    }
 
-    // 错误处理已在上面的try-catch中处理
+          // 处理剩余的buffer
+          if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
+            try {
+              const jsonStr = buffer.slice(6).trim();
+              if (jsonStr) {
+                const data = JSON.parse(jsonStr);
+                if (data.choices && data.choices[0]?.delta?.content) {
+                  const content = data.choices[0].delta.content;
+                  fullContent += content;
+                  
+                  // 检查是否包含图片数据
+                  if (content.includes('data:image')) {
+                    imageFound = true;
+                    console.log('Image data detected in final buffer');
+                  }
+                }
+              }
+            } catch (e) {
+              console.log('Parse error for final buffer');
+            }
+          }
+
+          console.log('Stream content length:', fullContent.length);
+          console.log('Image found in stream:', imageFound);
+
+          // 构造完整响应
+          if (fullContent.length > 0) {
+            responseData = {
+              choices: [{
+                message: {
+                  content: fullContent
+                }
+              }],
+              usage: {
+                completion_tokens: fullContent.length
+              },
+              _streamImageFound: imageFound // 添加标记，便于后续处理
+            };
+          }
+        } catch (streamError) {
+          console.log('Stream processing error:', streamError.message);
+          throw streamError;
+        }
+
+        // 如果找到了图片，跳出重试循环
+        if (imageFound) {
+          break;
+        } else if (retryCount < maxRetries) {
+          console.log('未找到图片，准备重试...');
+          retryCount++;
+          // 可以在这里添加一些延迟，避免立即重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      } catch (error) {
+        console.error(`${retryCount === 0 ? '首次' : '重试'}请求失败:`, error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          // 可以在这里添加一些延迟，避免立即重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        throw error;
+      }
+      break; // 如果成功找到图片，跳出循环
+    }
 
     let imageUrl = null;
     let responseText = '';
 
     // 获取完整响应文本用于调试和搜索
     const fullResponseText = JSON.stringify(responseData);
+    console.log('Response has stream image marker:', responseData._streamImageFound);
 
     // 尝试多种方式解析响应
     if (responseData.choices && responseData.choices.length > 0) {
