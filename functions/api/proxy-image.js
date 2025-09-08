@@ -85,16 +85,22 @@ export async function onRequest(context) {
       return new Response('Not an image', { status: 400 });
     }
 
-    // 返回图片，添加缓存头
+    // 返回图片，添加缓存头和其他必要的HTTP头
     return new Response(imageResponse.body, {
       status: 200,
       headers: {
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
         'Cache-Control': 'public, max-age=86400, s-maxage=86400', // 缓存24小时
         'CDN-Cache-Control': 'public, max-age=86400',
         'Cloudflare-CDN-Cache-Control': 'public, max-age=86400',
         'Vary': 'Accept-Encoding',
+        // 添加额外的HTTP头以支持图片在新标签页中显示
+        'Content-Disposition': 'inline', // 确保图片在浏览器中内联显示，而不是下载
+        'Accept-Ranges': 'bytes', // 支持范围请求
+        'Content-Length': imageResponse.headers.get('content-length') || '', // 保留原始内容长度
       },
     });
 
