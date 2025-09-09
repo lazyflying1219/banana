@@ -34,6 +34,7 @@
             <div class="tabs">
                 <button id="tab-text-to-image" class="active">文生图</button>
                 <button id="tab-image-to-image">图生图</button>
+                <button id="tab-image-edit">图编辑</button>
             </div>
 
             <div id="text-to-image-panel" class="panel active">
@@ -51,6 +52,80 @@
                 <textarea id="prompt-input-image" placeholder="描述你希望如何变换这张图片..."></textarea>
             </div>
 
+            <div id="image-edit-panel" class="panel">
+                <h3>图片编辑</h3>
+                <div class="edit-tools">
+                    <div class="tool-group">
+                        <h4>绘图工具</h4>
+                        <div class="tool-buttons">
+                            <button id="edit-tool-rectangle" class="tool-btn active" data-tool="rectangle" title="矩形">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                            </button>
+                            <button id="edit-tool-circle" class="tool-btn" data-tool="circle" title="圆形">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>
+                            </button>
+                            <button id="edit-tool-arrow" class="tool-btn" data-tool="arrow" title="箭头">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 7"></polyline></svg>
+                            </button>
+                            <button id="edit-tool-text" class="tool-btn" data-tool="text" title="文本">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="tool-group">
+                        <h4>颜色</h4>
+                        <div class="color-picker">
+                            <input type="color" id="edit-color" value="#ff0000">
+                            <div class="preset-colors">
+                                <div class="color-preset" data-color="#ff0000" style="background-color: #ff0000;"></div>
+                                <div class="color-preset" data-color="#00ff00" style="background-color: #00ff00;"></div>
+                                <div class="color-preset" data-color="#0000ff" style="background-color: #0000ff;"></div>
+                                <div class="color-preset" data-color="#ffff00" style="background-color: #ffff00;"></div>
+                                <div class="color-preset" data-color="#ff00ff" style="background-color: #ff00ff;"></div>
+                                <div class="color-preset" data-color="#00ffff" style="background-color: #00ffff;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tool-group">
+                        <h4>宽高比</h4>
+                        <div id="edit-ratio-buttons-container" class="ratio-buttons">
+                            <!-- 宽高比按钮将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                    <div class="tool-group">
+                        <h4>操作</h4>
+                        <div class="action-buttons">
+                            <button id="edit-clear-btn" class="secondary-button">清除标记</button>
+                            <button id="edit-reset-btn" class="secondary-button">重置图片</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="edit-canvas-container">
+                    <div class="file-upload-area" id="edit-upload-area">
+                        <p>上传图片进行编辑</p>
+                        <input type="file" id="edit-image-input" accept="image/*" hidden>
+                        <div class="upload-thumbs" id="edit-upload-thumbs"></div>
+                    </div>
+                    <div class="edit-canvas-wrapper hidden">
+                        <canvas id="edit-canvas"></canvas>
+                        <img id="edit-image" class="hidden">
+                    </div>
+                </div>
+                
+                <div class="edit-reference-images">
+                    <h3>参考图片</h3>
+                    <div class="file-upload-area" id="edit-reference-upload-area">
+                        <p>上传参考图片（可选）</p>
+                        <input type="file" id="edit-reference-input" accept="image/*" multiple hidden>
+                    </div>
+                    <div class="edit-reference-thumbnails hidden" id="edit-reference-thumbnails">
+                        <!-- 参考图片缩略图将在这里显示 -->
+                    </div>
+                </div>
+                <h3>编辑说明</h3>
+                <textarea id="edit-instructions" placeholder="描述你希望如何编辑这张图片，例如：将圈出的区域替换为..."></textarea>
+            </div>
+
             <!-- 比例选择器 -->
             <div class="aspect-ratio-selector">
                 <h3>图片比例</h3>
@@ -59,7 +134,9 @@
                 </div>
             </div>
 
-            <button class="generate-button">生成</button>
+            <button class="generate-button" id="generate-btn-text">生成</button>
+            <button class="generate-button hidden" id="generate-btn-image">生成</button>
+            <button class="generate-button hidden" id="generate-btn-edit">编辑图片</button>
         </section>
 
         <!-- 第二栏：灵感画廊 (Carousel) -->
