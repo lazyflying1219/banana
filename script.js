@@ -3725,6 +3725,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        // 在函数内部获取所需的DOM元素引用
+        const imageToImagePanel = document.getElementById('image-to-image-panel');
+        const promptInputImage = document.getElementById('prompt-input-img2img');
+        const promptInputText = document.getElementById('prompt-input-text');
+        
         // 获取画布内容（包含注释）
         const canvasWithAnnotations = document.createElement('canvas');
         canvasWithAnnotations.width = window.editCanvas.width;
@@ -3773,8 +3778,8 @@ document.addEventListener('DOMContentLoaded', () => {
             editPrompt += `\n\n注意：除了主编辑图片外，还有 ${referenceCount} 张参考图片，请参考这些图片的风格、元素或内容进行编辑。`;
         }
         
-        // 临时保存原始提示词输入元素的值
-        const originalPromptInput = imageToImagePanel.classList.contains('active') ? promptInputImage : promptInputText;
+        // 临时保存原始提示词输入元素的值 - 使用本地声明的变量
+        const originalPromptInput = imageToImagePanel && imageToImagePanel.classList.contains('active') ? promptInputImage : promptInputText;
         const originalPromptValue = originalPromptInput ? originalPromptInput.value : '';
         
         // 设置编辑提示词
