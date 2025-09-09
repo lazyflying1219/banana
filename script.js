@@ -780,17 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function generateImage() {
-        // 检查当前激活的面板
-        if (imageEditPanel && imageEditPanel.classList.contains('active')) {
-            // 如果是图编辑面板，调用编辑图片生成函数
-            return await generateEditedImage();
-        } else {
-            // 否则调用普通的图片生成函数
-            return await generateImageWithRetry();
-        }
-    }
-
+    // --- 图片生成函数（需要先定义，供其他函数调用） ---
     async function generateImageWithRetry(retryCount = 0, isTextResponseError = false) {
         // 根据错误类型设置不同的最大重试次数
         const maxRetries = isTextResponseError ? 2 : 3;
@@ -1113,6 +1103,111 @@ document.addEventListener('DOMContentLoaded', () => {
         errorDiv.appendChild(debugInfo);
         imageDisplay.innerHTML = '';
         imageDisplay.appendChild(errorDiv);
+    }
+
+    async function generateImage() {
+        // 检查当前激活的面板
+        if (imageEditPanel && imageEditPanel.classList.contains('active')) {
+            // 如果是图编辑面板，调用编辑图片生成函数
+            return await generateEditedImage();
+        } else {
+            // 否则调用普通的图片生成函数
+            return await generateImageWithRetry();
+        }
+    }
+
+    // --- 编辑图片生成功能 ---
+    async function generateEditedImage() {
+        if (!window.editImageUploaded) {
+            if (typeof showNotification === 'function') showNotification('请先上传一张图片', 'error');
+            return;
+        }
+        
+        const editInstructions = document.getElementById('edit-instructions');
+        if (!editInstructions || !editInstructions.value.trim()) {
+            if (typeof showNotification === 'function') showNotification('请输入编辑说明', 'error');
+            return;
+        }
+        
+        // 在函数内部获取所需的DOM元素引用
+        const imageToImagePanel = document.getElementById('image-to-image-panel');
+        const promptInputImage = document.getElementById('prompt-input-img2img');
+        const promptInputText = document.getElementById('prompt-input-text');
+        
+        // 获取画布内容（包含注释）
+        const canvasWithAnnotations = document.createElement('canvas');
+        canvasWithAnnotations.width = window.editCanvas.width;
+        canvasWithAnnotations.height = window.editCanvas.height;
+        const ctx = canvasWithAnnotations.getContext('2d');
+        
+        // 绘制原始图片和标注
+        ctx.drawImage(window.editCanvas, 0, 0);
+        
+        // 转换为DataURL
+        const imageDataUrl = canvasWithAnnotations.toDataURL('image/png');
+        
+        // 准备上传文件列表，使用与图生图相同的格式
+        uploadedFiles = [];
+        
+        // 添加编辑后的画布作为第一张图片
+        uploadedFiles.push({
+            file: null,
+            dataUrl: imageDataUrl
+        });
+        
+        // 添加参考图片
+        if (window.editUploadedFiles.length > 1) {
+            for (let i = 1; i < window.editUploadedFiles.length; i++) {
+                uploadedFiles.push({
+                    file: window.editUploadedFiles[i].file,
+                    dataUrl: window.editUploadedFiles[i].dataUrl
+                });
+            }
+        }
+        
+        // 构建编辑专用的提示词
+        const instructions = editInstructions.value.trim();
+        let editPrompt = instructions;
+        
+        // 根据是否有标注来调整提示词
+        if (window.annotations && window.annotations.length > 0) {
+            editPrompt = `请注意：第一张图片是用户编辑的主图，其中包含了用户标注的特定区域（矩形、圆形、箭头或文本）。这些标注表示用户希望重点编辑或替换的区域。请根据以下编辑说明，在这些标注区域内进行相应的修改：\n\n${instructions}`;
+        } else {
+            editPrompt = `请基于第一张主编辑图片，根据以下编辑需求进行修改或重绘：\n\n${instructions}`;
+        }
+        
+        // 如果有参考图片，在提示词中说明
+        if (uploadedFiles.length > 1) {
+            const referenceCount = uploadedFiles.length - 1;
+            editPrompt += `\n\n注意：除了主编辑图片外，还有 ${referenceCount} 张参考图片，请参考这些图片的风格、元素或内容进行编辑。`;
+        }
+        
+        // 临时保存原始提示词输入元素的值 - 使用本地声明的变量
+        const originalPromptInput = imageToImagePanel && imageToImagePanel.classList.contains('active') ? promptInputImage : promptInputText;
+        const originalPromptValue = originalPromptInput ? originalPromptInput.value : '';
+        
+        // 设置编辑提示词
+        if (originalPromptInput) {
+            originalPromptInput.value = editPrompt;
+        }
+        
+        try {
+            // 调用通用的图片生成函数 - 确保函数在当前作用域可访问
+            if (typeof generateImageWithRetry === 'function') {
+                await generateImageWithRetry();
+            } else {
+                console.error('generateImageWithRetry 函数未定义');
+                throw new Error('generateImageWithRetry 函数未定义');
+            }
+        } finally {
+            // 恢复原始提示词
+            if (originalPromptInput) {
+                originalPromptInput.value = originalPromptValue;
+            }
+            
+            // 清理临时的uploadedFiles，避免影响图生图功能
+            uploadedFiles = [];
+        }
     }
     if (generateBtnText) {
         generateBtnText.addEventListener('click', generateImage);
@@ -3710,93 +3805,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         hideTextInputModal();
-    }
-    
-    // --- 编辑图片生成功能 ---
-    async function generateEditedImage() {
-        if (!window.editImageUploaded) {
-            if (typeof showNotification === 'function') showNotification('请先上传一张图片', 'error');
-            return;
-        }
-        
-        const editInstructions = document.getElementById('edit-instructions');
-        if (!editInstructions || !editInstructions.value.trim()) {
-            if (typeof showNotification === 'function') showNotification('请输入编辑说明', 'error');
-            return;
-        }
-        
-        // 在函数内部获取所需的DOM元素引用
-        const imageToImagePanel = document.getElementById('image-to-image-panel');
-        const promptInputImage = document.getElementById('prompt-input-img2img');
-        const promptInputText = document.getElementById('prompt-input-text');
-        
-        // 获取画布内容（包含注释）
-        const canvasWithAnnotations = document.createElement('canvas');
-        canvasWithAnnotations.width = window.editCanvas.width;
-        canvasWithAnnotations.height = window.editCanvas.height;
-        const ctx = canvasWithAnnotations.getContext('2d');
-        
-        // 绘制原始图片和标注
-        ctx.drawImage(window.editCanvas, 0, 0);
-        
-        // 转换为DataURL
-        const imageDataUrl = canvasWithAnnotations.toDataURL('image/png');
-        
-        // 准备上传文件列表，使用与图生图相同的格式
-        uploadedFiles = [];
-        
-        // 添加编辑后的画布作为第一张图片
-        uploadedFiles.push({
-            file: null,
-            dataUrl: imageDataUrl
-        });
-        
-        // 添加参考图片
-        if (window.editUploadedFiles.length > 1) {
-            for (let i = 1; i < window.editUploadedFiles.length; i++) {
-                uploadedFiles.push({
-                    file: window.editUploadedFiles[i].file,
-                    dataUrl: window.editUploadedFiles[i].dataUrl
-                });
-            }
-        }
-        
-        // 构建编辑专用的提示词
-        const instructions = editInstructions.value.trim();
-        let editPrompt = instructions;
-        
-        // 根据是否有标注来调整提示词
-        if (window.annotations && window.annotations.length > 0) {
-            editPrompt = `请注意：第一张图片是用户编辑的主图，其中包含了用户标注的特定区域（矩形、圆形、箭头或文本）。这些标注表示用户希望重点编辑或替换的区域。请根据以下编辑说明，在这些标注区域内进行相应的修改：\n\n${instructions}`;
-        } else {
-            editPrompt = `请基于第一张主编辑图片，根据以下编辑需求进行修改或重绘：\n\n${instructions}`;
-        }
-        
-        // 如果有参考图片，在提示词中说明
-        if (uploadedFiles.length > 1) {
-            const referenceCount = uploadedFiles.length - 1;
-            editPrompt += `\n\n注意：除了主编辑图片外，还有 ${referenceCount} 张参考图片，请参考这些图片的风格、元素或内容进行编辑。`;
-        }
-        
-        // 临时保存原始提示词输入元素的值 - 使用本地声明的变量
-        const originalPromptInput = imageToImagePanel && imageToImagePanel.classList.contains('active') ? promptInputImage : promptInputText;
-        const originalPromptValue = originalPromptInput ? originalPromptInput.value : '';
-        
-        // 设置编辑提示词
-        if (originalPromptInput) {
-            originalPromptInput.value = editPrompt;
-        }
-        
-        try {
-            // 调用通用的图片生成函数
-            await generateImageWithRetry();
-        } finally {
-            // 恢复原始提示词
-            if (originalPromptInput) {
-                originalPromptInput.value = originalPromptValue;
-            }
-            
-            // 清理临时的uploadedFiles，避免影响图生图功能
-            uploadedFiles = [];
-        }
     }
