@@ -14,6 +14,25 @@
 
   function applyImageFadeIn(imgEl){ imgEl.style.opacity=0; imgEl.onload = ()=> setTimeout(()=> imgEl.style.opacity = 1, 50); if (imgEl.complete) setTimeout(()=> imgEl.style.opacity = 1, 50); }
 
+  // Check output image aspect ratio against selection; allow small tolerance
+  async function imageAspectMatches(src, ratioStr, tolerance = 0.03){
+    return new Promise((resolve) => {
+      if (!src || !ratioStr || !ratioStr.includes(':')) return resolve(true);
+      const [wStr, hStr] = ratioStr.split(':');
+      const expW = parseFloat(wStr); const expH = parseFloat(hStr);
+      if (!expW || !expH) return resolve(true);
+      const expected = expW / expH;
+      const img = new Image();
+      img.onload = () => {
+        const actual = img.naturalWidth / img.naturalHeight;
+        const dev = Math.abs(actual - expected) / expected;
+        resolve(dev <= tolerance);
+      };
+      img.onerror = () => resolve(true);
+      img.src = src;
+    });
+  }
+
   async function displayImage(imageData){
     const { imageDisplay, imageActions } = App.dom;
     imageDisplay.innerHTML = '';
@@ -98,10 +117,20 @@
     const selectedRatio = App.state.selectedRatio; const ratioConfig = U().ASPECT_RATIOS[selectedRatio];
     const basePrompt = (prompt || '').trim(); if (!basePrompt){ U().showNotification('请输入提示词', 'error'); return; }
 
+    // Immediately show loading UI to avoid perceived delay before async work (e.g., loading ratio canvas)
+    setLoadingState();
+
     // images collection per mode
     let images = [];
     let useAspectRatioCanvas = false;
-    if (mode === 'img2img'){ images = App.state.uploadedFiles.map(f=> f.dataUrl); }
+    if (mode === 'img2img'){
+      images = App.state.uploadedFiles.map(f=> f.dataUrl);
+      // include aspect ratio canvas if applicable
+      if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
+        const ratioBase = await imageToDataUrl(ratioConfig.baseImage);
+        if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; }
+      }
+    }
     else if (mode === 'editor'){
       images = [...App.state.editor.refImages];
       if (App.state.editor.baseImageDataUrl) images.push(App.state.editor.baseImageDataUrl);
@@ -116,19 +145,31 @@
       }
     }
 
+    // de-duplicate images (by dataUrl) to reduce redundancy
+    images = Array.from(new Set(images));
     const hasUserImages = images.length > 0;
     const enhancedPrompt = buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations: App.state.editor.annotations, ratioConfig });
 
     const requestBody = { prompt: enhancedPrompt, model: modelName, images };
-    setLoadingState();
 
     let retryCount = 0; const maxRetries = 3;
+    let aspectRetryDone = false;
     while (retryCount <= maxRetries){
       try {
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
         if (!response.ok){ let errorData; try { errorData = await response.json(); } catch { errorData = { error: `HTTP ${response.status}: ${response.statusText}` }; } throw errorData; }
         const result = await response.json();
-        if (result.src){ clearLoadingState(); await displayImage({ src: result.src, prompt: basePrompt, model: modelName }); return; }
+        if (result.src){
+          // Post-check aspect ratio; if mismatched, retry once with stricter instruction
+          const matches = await imageAspectMatches(result.src, selectedRatio, 0.03);
+          if (!matches && !aspectRetryDone && selectedRatio){
+            aspectRetryDone = true;
+            if (U() && U().showNotification) U().showNotification('检测到输出比例不符，正在按所选比例重试一次…','info');
+            requestBody.prompt = requestBody.prompt + '\n- 如果输出宽高比与所选 ' + selectedRatio + ' 不一致，请重新生成直到满足。务必完全填充画面且不留边框。';
+            continue;
+          }
+          clearLoadingState(); await displayImage({ src: result.src, prompt: basePrompt, model: modelName }); return;
+        }
         if (result.error && result.error === 'API响应中未找到图片数据'){
           if (result.responseText || result.rawResponse?.choices?.[0]?.message?.content){
             const textContent = result.responseText || result.rawResponse.choices[0].message.content;
