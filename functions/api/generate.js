@@ -4,14 +4,32 @@
 export async function onRequest(context) {
   const { request, env } = context;
 
+  // Build flexible CORS headers (optionally restricted by env.ALLOWED_ORIGINS)
+  const buildCorsHeaders = () => {
+    const origin = request.headers.get('Origin') || '';
+    const allowList = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+    let allowOrigin = '*';
+    if (allowList.length > 0 && !allowList.includes('*')) {
+      // Match exact origin entries; if only domains are provided, allow exact scheme+host match
+      if (origin && allowList.includes(origin)) {
+        allowOrigin = origin;
+      } else {
+        // Fallback to first configured origin to avoid wildcard
+        allowOrigin = allowList[0];
+      }
+    }
+    return {
+      'Access-Control-Allow-Origin': allowOrigin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Vary': 'Origin',
+    };
+  };
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+      headers: buildCorsHeaders(),
     });
   }
 
@@ -19,15 +37,16 @@ export async function onRequest(context) {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  let body = null;
   try {
-    const body = await request.json();
+    body = await request.json();
     const apiKey = env.VELAO_API_KEY;
 
     if (!apiKey) {
       const placeholderUrl = `https://placehold.co/1024x1024/000000/FFFFFF/png?text=API%20Key%20Not%20Set\\n${encodeURIComponent(body.prompt)}`;
       return new Response(JSON.stringify({ src: placeholderUrl }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { 'Content-Type': 'application/json', ...buildCorsHeaders() },
       });
     }
 
@@ -380,10 +399,7 @@ export async function onRequest(context) {
 
     return new Response(JSON.stringify(frontendResponse), {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: { 'Content-Type': 'application/json', ...buildCorsHeaders() },
     });
 
   } catch (err) {
@@ -392,7 +408,8 @@ export async function onRequest(context) {
     return new Response(JSON.stringify({
       error: '服务器内部错误',
       details: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      // Cloudflare Workers do not expose process.env; guard usage
+      stack: (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') ? err.stack : undefined,
       apiUrl: 'https://veloe.onrender.com/v1/chat/completions',
       hasApiKey: !!env.VELAO_API_KEY,
       requestBody: body,
@@ -405,7 +422,7 @@ export async function onRequest(context) {
       ]
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: { 'Content-Type': 'application/json', ...buildCorsHeaders() },
     });
   }
 }

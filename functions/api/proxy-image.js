@@ -5,16 +5,28 @@ export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
 
+  const buildCorsHeaders = () => {
+    const origin = request.headers.get('Origin') || '';
+    const allowList = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+    let allowOrigin = '*';
+    if (allowList.length > 0 && !allowList.includes('*')) {
+      if (origin && allowList.includes(origin)) {
+        allowOrigin = origin;
+      } else {
+        allowOrigin = allowList[0];
+      }
+    }
+    return {
+      'Access-Control-Allow-Origin': allowOrigin,
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Vary': 'Origin',
+    };
+  };
+
   // 处理CORS预检请求
   if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+    return new Response(null, { status: 204, headers: buildCorsHeaders() });
   }
 
   if (request.method !== 'GET') {
@@ -45,15 +57,44 @@ export async function onRequest(context) {
       'banana-6ot.pages.dev' // 添加当前应用域名
     ];
     
-    const allowedRepos = [
+    const defaultAllowedRepos = [
       'PicoTrex/Awesome-Nano-Banana-images',
       'songguoxs/gpt4o-image-prompts',
       'jamez-bondos/awesome-gpt4o-images'
     ];
+    const allowedRepos = (env.ALLOWED_REPOS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (allowedRepos.length === 0) allowedRepos.push(...defaultAllowedRepos);
 
-    // 如果是允许的域名，直接允许代理
+    // 如果是允许的域名，进行进一步检查（GitHub域名校验仓库白名单）
     if (allowedDomains.includes(targetUrl.hostname)) {
-      // 对于这些域名，直接允许，无需进一步检查
+      if (targetUrl.hostname === 'raw.githubusercontent.com') {
+        // Path format: /{owner}/{repo}/{branch}/path/to/file
+        const parts = targetUrl.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          const repoId = `${parts[0]}/${parts[1]}`;
+          if (!allowedRepos.includes(repoId)) {
+            return new Response('Repository not allowed', { status: 403, headers: buildCorsHeaders() });
+          }
+        } else {
+          return new Response('Invalid GitHub raw URL', { status: 400, headers: buildCorsHeaders() });
+        }
+      } else if (targetUrl.hostname === 'github.com') {
+        // Path format: /{owner}/{repo}/raw/{branch}/path
+        const parts = targetUrl.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          const repoId = `${parts[0]}/${parts[1]}`;
+          if (!allowedRepos.includes(repoId)) {
+            return new Response('Repository not allowed', { status: 403, headers: buildCorsHeaders() });
+          }
+        } else {
+          return new Response('Invalid GitHub URL', { status: 400, headers: buildCorsHeaders() });
+        }
+      }
+      // user-images.githubusercontent.com / veloe.onrender.com / banana-6ot.pages.dev
+      // are allowed without repo checks
     }
     // 如果是data URL，直接返回错误，因为不需要代理
     else if (imageUrl.startsWith('data:')) {
@@ -90,9 +131,7 @@ export async function onRequest(context) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        ...buildCorsHeaders(),
         'Cache-Control': 'public, max-age=86400, s-maxage=86400', // 缓存24小时
         'CDN-Cache-Control': 'public, max-age=86400',
         'Cloudflare-CDN-Cache-Control': 'public, max-age=86400',
@@ -108,9 +147,7 @@ export async function onRequest(context) {
     console.error('Proxy error:', error);
     return new Response('Internal Server Error', { 
       status: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-      }
+      headers: buildCorsHeaders(),
     });
   }
 }
