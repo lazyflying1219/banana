@@ -47,6 +47,8 @@
       const gridItem = document.createElement('div'); gridItem.className='grid-item'; gridItem.style.position='relative';
       const img = document.createElement('img'); img.decoding='async'; const imgSrc = type==='history' ? item.thumbnail : (item.thumbnail || item.src || ''); img.alt='Image'; img.src = U().getProxiedImageUrl(imgSrc); img.onerror = function(){ this.style.display='none'; const icon=document.createElement('div'); icon.innerHTML='🖼️'; icon.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100px;font-size:2em;background-color:var(--bg-color);border-radius:var(--border-radius-small);'; this.parentNode.appendChild(icon); };
       const p = document.createElement('p'); p.title=item.prompt||''; p.textContent=item.prompt||'';
+      // add timestamp line
+      const timeInfo = document.createElement('div'); timeInfo.className='time-info'; const ts = item.timestamp || item.id; if (ts){ const date = new Date(typeof ts === 'number' ? ts : parseInt(ts, 10)); timeInfo.textContent = date.toLocaleString(); }
       const deleteBtn = document.createElement('button'); deleteBtn.className='delete-item-btn'; deleteBtn.innerHTML='×'; deleteBtn.style.cssText='position:absolute;top:5px;right:5px;background:rgba(220,53,69,0.9);color:white;border:none;border-radius:50%;width:24px;height:24px;font-size:16px;line-height:1;cursor:pointer;display:none;z-index:10;'; gridItem.addEventListener('mouseenter',()=> deleteBtn.style.display='block'); gridItem.addEventListener('mouseleave',()=> deleteBtn.style.display='none'); deleteBtn.addEventListener('click', (e)=>{ e.stopPropagation(); const id = type==='history' ? item.id : (item.id || item.title || item.src); deleteItem(id, type); });
       img.addEventListener('click', ()=>{
         const fullSrc = type==='history' ? item.src : (item.src || item.thumbnail); const processedSrc = U().getProxiedImageUrl(fullSrc);
@@ -59,7 +61,7 @@
         App.openModal(App.dom.historyDetailModal);
       });
       const imageContainer=document.createElement('div'); imageContainer.className='grid-item-image-container'; imageContainer.appendChild(img);
-      const contentContainer=document.createElement('div'); contentContainer.className='grid-item-content'; contentContainer.appendChild(p);
+      const contentContainer=document.createElement('div'); contentContainer.className='grid-item-content'; contentContainer.appendChild(p); contentContainer.appendChild(timeInfo);
       gridItem.appendChild(imageContainer); gridItem.appendChild(contentContainer); gridItem.appendChild(deleteBtn); fragment.appendChild(gridItem);
     });
     gridElement.appendChild(fragment);
@@ -82,4 +84,3 @@
 
   App.historyFavorites = { init, addToHistory, toggleFavorite, updateTemplateFavoriteIcon, updateResultFavoriteIcon, loadFavorites, loadHistory };
 })();
-

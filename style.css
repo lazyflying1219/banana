@@ -392,6 +392,20 @@ html[data-theme="dark"] .main-controls .tabs button.active {
     align-items: center;
 }
 
+.gallery-search input[type=search] {
+    width: 240px;
+    max-width: 40vw;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(120,120,128,0.08);
+    color: var(--text-color);
+    outline: none;
+}
+@media (max-width: 768px){
+  .gallery-search input[type=search]{ width: 160px; }
+}
+
 #prompt-display-area {
     background-color: rgba(120, 120, 128, 0.12);
     color: var(--text-color-secondary);

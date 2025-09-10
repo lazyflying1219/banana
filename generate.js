@@ -59,8 +59,10 @@
           instructions += `  - 文字${base} | 归一化: x=${fmt(norm.x)}, y=${fmt(norm.y)}。文字内容作为意图提示，不要在最终图上绘制文字叠层。\n`;
         }
       });
-      instructions += '- 请根据这些标注进行合理排版与物体摆放，保持真实的光影、材质和透视一致性；最终图像中不要包含这些标注的可见痕迹。\n';
+      instructions += '- 请根据这些标注进行合理排版与物体摆放，保持真实的光影、材质和透视一致性；最终图像中不要包含任何标注、红框、箭头或文字的可见痕迹，仅把它们视为布局指导。\n';
     }
+    // 强化不渲染标注的要求
+    instructions += '\n- 严禁在最终图像中绘制框线、标注、说明文字或任何叠加元素。\n';
     return `${instructions}\n用户的需求："${basePrompt}"`;
   }
   function fmt(n){ return (typeof n === 'number' ? n.toFixed(3) : n); }

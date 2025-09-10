@@ -1719,3 +1719,8 @@ const promptExamples = {
     }
   ]
 }
+
+// 兼容全局访问，确保画廊模块能读取
+if (typeof window !== 'undefined') {
+  window.promptExamples = promptExamples;
+}

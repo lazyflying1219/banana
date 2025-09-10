@@ -105,6 +105,15 @@
     App.dom.carouselNext.disabled = App.state.currentPage >= totalPages - 1;
   }
 
+  // search filter
+  function applySearchFilter(query){
+    const q = (query || '').trim().toLowerCase();
+    if (!q){ App.state.allExamples = (window.promptExamples && (document.querySelector('.tabs button.active')?.id === 'tab-image-to-image' ? window.promptExamples.image_to_image : window.promptExamples.text_to_image)) || []; loadPage(0); return; }
+    const pool = (window.promptExamples && window.promptExamples.text_to_image || []).concat((window.promptExamples && window.promptExamples.image_to_image || []));
+    App.state.allExamples = pool.filter(ex => (ex.title||'').toLowerCase().includes(q) || (ex.author||'').toLowerCase().includes(q) || (ex.prompt||'').toLowerCase().includes(q));
+    App.state.currentPage = 0; loadPage(0);
+  }
+
   function init(){
     // arrows
     if (App.dom.carouselPrev && !App.dom.carouselPrev.dataset.listenerAdded){
@@ -114,6 +123,13 @@
     if (App.dom.carouselNext && !App.dom.carouselNext.dataset.listenerAdded){
       App.dom.carouselNext.addEventListener('click', ()=>{ if (App.state.currentPage < Math.ceil(App.state.allExamples.length/App.state.itemsPerPage)-1){ App.state.currentPage++; loadPage(App.state.currentPage);} });
       App.dom.carouselNext.dataset.listenerAdded = 'true';
+    }
+    // search input
+    const searchInput = document.getElementById('gallery-search-input');
+    if (searchInput && !searchInput.dataset.listenerAdded){
+      let t = null;
+      searchInput.addEventListener('input', ()=>{ clearTimeout(t); t = setTimeout(()=> applySearchFilter(searchInput.value), 200); });
+      searchInput.dataset.listenerAdded = 'true';
     }
     // select template button
     if (App.dom.selectTemplateBtn && !App.dom.selectTemplateBtn.dataset.listenerAdded){
@@ -153,4 +169,5 @@
   }
 
   App.gallery = { init, loadPage, cleanup, updateGalleryDisplay };
+  // mobile: preview already disabled via CSS. Desktop preview timing tuned below if needed.
 })();

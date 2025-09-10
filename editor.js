@@ -31,12 +31,12 @@
     clearBtn && clearBtn.addEventListener('click', ()=>{ App.state.editor.annotations = []; redraw(); });
     exportBtn && exportBtn.addEventListener('click', ()=>{
       if (!App.state.editor.baseImageDataUrl){ U().showNotification('请先上传并编辑一张图片','error'); return; }
-      const dataUrl = canvas.toDataURL('image/png');
-      App.state.editor.baseImageDataUrl = dataUrl; // ensure latest
+      // 只加入干净的底图（不包含标注叠加），避免把红框带入生成
+      const dataUrl = App.state.editor.baseImageDataUrl;
       if (App.state.editor.refImages.length >= 9) { U().showNotification('参考图最多 9 张','error'); return; }
       App.state.editor.refImages.push(dataUrl);
       renderEditorRefThumbs();
-      U().showNotification('已将编辑后的图片加入参考图','success');
+      U().showNotification('已将底图加入参考图（不含标注）','success');
     });
 
     const replaceBtn = document.getElementById('editor-replace-image-btn');
