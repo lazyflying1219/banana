@@ -160,8 +160,16 @@
         if (!response.ok){ let errorData; try { errorData = await response.json(); } catch { errorData = { error: `HTTP ${response.status}: ${response.statusText}` }; } throw errorData; }
         const result = await response.json();
         if (result.src){
-          // Post-check aspect ratio; if mismatched, retry once with stricter instruction
+          // Post-check aspect ratio; prioritize retry when model defaulted to 1:1 while a non-1:1 ratio was chosen
           const matches = await imageAspectMatches(result.src, selectedRatio, 0.03);
+          const isNearSquare = await imageAspectMatches(result.src, '1:1', 0.02);
+          const targetIsSquare = (selectedRatio === '1:1');
+          if (!targetIsSquare && isNearSquare && !aspectRetryDone){
+            aspectRetryDone = true;
+            if (U() && U().showNotification) U().showNotification('检测到模型默认输出为 1:1，正在按所选比例重试一次…','info');
+            requestBody.prompt = requestBody.prompt + '\n- 目标比例为 ' + selectedRatio + '，切勿输出 1:1。若比例不符请重新生成直至满足，必须完全填充画面且不留边框。';
+            continue;
+          }
           if (!matches && !aspectRetryDone && selectedRatio){
             aspectRetryDone = true;
             if (U() && U().showNotification) U().showNotification('检测到输出比例不符，正在按所选比例重试一次…','info');
