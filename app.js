@@ -63,6 +63,7 @@
       moonIcon: document.querySelector('.theme-icon-moon'),
 
       // results
+      imageDisplayContainer: $('image-display-container'),
       imageDisplay: $('image-display'),
       imageActions: $('image-actions'),
       favoriteResultBtn: $('favorite-result-btn'),

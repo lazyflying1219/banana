@@ -35,7 +35,7 @@
   }
 
   async function displayImage(imageData){
-    const { imageDisplay, imageActions } = App.dom;
+    const { imageDisplay, imageActions, imageDisplayContainer } = App.dom;
     imageDisplay.innerHTML = '';
     const currentImg = document.createElement('img'); currentImg.decoding='async'; currentImg.onerror = function(){ imageDisplay.innerHTML = '<p>图片加载失败，请重试</p>'; imageActions.classList.add('hidden'); };
     currentImg.src = imageData.src; currentImg.alt = imageData.prompt || 'Generated Image';
@@ -49,6 +49,9 @@
     // Debug: show model text reply and final prompt under the image
     try {
       if (imageData && (imageData.textResponse || imageData.finalPrompt)) {
+        // remove previous meta blocks
+        const container = imageDisplayContainer || document.getElementById('image-display-container') || imageDisplay.parentElement;
+        Array.from(container.querySelectorAll('.gen-meta')).forEach(n => n.remove());
         const meta = document.createElement('div');
         meta.className = 'gen-meta';
         meta.style.marginTop = '12px';
@@ -81,7 +84,8 @@
           meta.appendChild(h2);
           meta.appendChild(pre2);
         }
-        imageDisplay.appendChild(meta);
+        // append meta below the image area
+        container.appendChild(meta);
       }
     } catch(_) {}
     App.state.currentGeneratedImage = { ...imageData, id: imageData.id || `gen_${Date.now()}`, timestamp: Date.now() };
