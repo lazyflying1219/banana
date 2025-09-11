@@ -26,6 +26,7 @@
       img.onload = () => {
         const actual = img.naturalWidth / img.naturalHeight;
         const dev = Math.abs(actual - expected) / expected;
+        try { console.debug(`[ratio-check] ${src.slice(0,30)}... expected ${ratioStr}=${expected.toFixed(4)}, actual ${img.naturalWidth}x${img.naturalHeight} (${actual.toFixed(4)}), dev ${(dev*100).toFixed(2)}%`); } catch(_) {}
         resolve(dev <= tolerance);
       };
       img.onerror = () => resolve(true);
@@ -45,9 +46,55 @@
       App.dom.lightboxImage.src = imageData.src; App.dom.lightboxImage.alt = imageData.prompt || 'image'; App.dom.lightboxModal.classList.remove('hidden'); document.body.style.overflow='hidden';
     });
     imageActions.classList.remove('hidden');
+    // Debug: show model text reply and final prompt under the image
+    try {
+      if (imageData && (imageData.textResponse || imageData.finalPrompt)) {
+        const meta = document.createElement('div');
+        meta.className = 'gen-meta';
+        meta.style.marginTop = '12px';
+        meta.style.padding = '10px';
+        meta.style.borderRadius = '8px';
+        meta.style.background = 'rgba(0,0,0,0.04)';
+        if (imageData.textResponse) {
+          const h = document.createElement('div');
+          h.style.fontWeight = '600';
+          h.style.marginBottom = '4px';
+          h.textContent = '模型文本回复';
+          const pre = document.createElement('pre');
+          pre.style.whiteSpace = 'pre-wrap';
+          pre.style.wordBreak = 'break-word';
+          pre.style.margin = '0 0 8px 0';
+          pre.textContent = imageData.textResponse;
+          meta.appendChild(h);
+          meta.appendChild(pre);
+        }
+        if (imageData.finalPrompt) {
+          const h2 = document.createElement('div');
+          h2.style.fontWeight = '600';
+          h2.style.margin = '8px 0 4px 0';
+          h2.textContent = '最终 Prompt';
+          const pre2 = document.createElement('pre');
+          pre2.style.whiteSpace = 'pre-wrap';
+          pre2.style.wordBreak = 'break-word';
+          pre2.style.margin = '0';
+          pre2.textContent = imageData.finalPrompt;
+          meta.appendChild(h2);
+          meta.appendChild(pre2);
+        }
+        imageDisplay.appendChild(meta);
+      }
+    } catch(_) {}
     App.state.currentGeneratedImage = { ...imageData, id: imageData.id || `gen_${Date.now()}`, timestamp: Date.now() };
     HF() && HF().addToHistory && HF().addToHistory(App.state.currentGeneratedImage);
     HF() && HF().updateResultFavoriteIcon && HF().updateResultFavoriteIcon();
+  }
+
+  function sanitizeModelText(str){
+    if (!str || typeof str !== 'string') return '';
+    try {
+      // Remove embedded base64 image payloads to keep the UI readable
+      return str.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=\s\n\r]+/g, '').trim();
+    } catch (_) { return String(str); }
   }
 
   function buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations, ratioConfig }){
@@ -123,12 +170,16 @@
     // images collection per mode
     let images = [];
     let useAspectRatioCanvas = false;
+    console.groupCollapsed('[Generate] start');
+    console.log('mode:', mode || 'txt2img');
+    console.log('model:', modelName);
+    console.log('selectedRatio:', selectedRatio, ratioConfig);
     if (mode === 'img2img'){
       images = App.state.uploadedFiles.map(f=> f.dataUrl);
       // include aspect ratio canvas if applicable
       if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
         const ratioBase = await imageToDataUrl(ratioConfig.baseImage);
-        if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; }
+        if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for img2img'); }
       }
     }
     else if (mode === 'editor'){
@@ -136,12 +187,12 @@
       if (App.state.editor.baseImageDataUrl) images.push(App.state.editor.baseImageDataUrl);
       // also include aspect ratio canvas as last if applicable
       if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
-        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; }
+        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for editor'); }
       }
     } else { // txt2img
       // only use ratio canvas if not 1:1
       if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
-        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; }
+        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for txt2img'); }
       }
     }
 
@@ -151,11 +202,16 @@
     const enhancedPrompt = buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations: App.state.editor.annotations, ratioConfig });
 
     const requestBody = { prompt: enhancedPrompt, model: modelName, images };
+    // Log request summary without dumping large base64 payloads
+    console.table([{ key: 'imagesCount', value: images.length }, { key: 'useAspectRatioCanvas', value: useAspectRatioCanvas }]);
+    console.log('prompt.length:', requestBody.prompt.length);
+    console.log('prompt.preview:', requestBody.prompt.slice(0, 400));
 
     let retryCount = 0; const maxRetries = 3;
     let aspectRetryDone = false;
     while (retryCount <= maxRetries){
       try {
+        console.log(`[Generate] request attempt #${retryCount+1}`);
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
         if (!response.ok){ let errorData; try { errorData = await response.json(); } catch { errorData = { error: `HTTP ${response.status}: ${response.statusText}` }; } throw errorData; }
         const result = await response.json();
@@ -168,15 +224,28 @@
             aspectRetryDone = true;
             if (U() && U().showNotification) U().showNotification('检测到模型默认输出为 1:1，正在按所选比例重试一次…','info');
             requestBody.prompt = requestBody.prompt + '\n- 目标比例为 ' + selectedRatio + '，切勿输出 1:1。若比例不符请重新生成直至满足，必须完全填充画面且不留边框。';
+            console.warn('[Generate] detected near-square output; appended stricter ratio instruction and retrying');
             continue;
           }
           if (!matches && !aspectRetryDone && selectedRatio){
             aspectRetryDone = true;
             if (U() && U().showNotification) U().showNotification('检测到输出比例不符，正在按所选比例重试一次…','info');
             requestBody.prompt = requestBody.prompt + '\n- 如果输出宽高比与所选 ' + selectedRatio + ' 不一致，请重新生成直到满足。务必完全填充画面且不留边框。';
+            console.warn('[Generate] detected ratio mismatch; appended stricter ratio instruction and retrying');
             continue;
           }
-          clearLoadingState(); await displayImage({ src: result.src, prompt: basePrompt, model: modelName }); return;
+          const modelTextRaw = (result.text || result.responseText || (result.rawResponse && result.rawResponse.choices && result.rawResponse.choices[0] && result.rawResponse.choices[0].message && result.rawResponse.choices[0].message.content) || '');
+          const modelText = sanitizeModelText(modelTextRaw);
+          clearLoadingState();
+          await displayImage({ src: result.src, prompt: basePrompt, model: modelName, textResponse: modelText, finalPrompt: requestBody.prompt });
+          console.groupCollapsed('[Generate] success');
+          console.log('image src length:', String(result.src).length);
+          console.log('model text length:', modelText.length);
+          console.log('final prompt length:', requestBody.prompt.length);
+          console.log('final prompt preview:', requestBody.prompt.slice(0, 400));
+          console.groupEnd();
+          console.groupEnd();
+          return;
         }
         if (result.error && result.error === 'API响应中未找到图片数据'){
           if (result.responseText || result.rawResponse?.choices?.[0]?.message?.content){
@@ -189,6 +258,7 @@
         }
         throw new Error(result.error || 'API 返回数据中未找到图片');
       } catch (error){
+        console.error('[Generate] error on attempt', retryCount+1, error);
         if (retryCount < maxRetries && shouldRetry(error)){
           // backoff with jitter
           const schedule = [3000, 7000, 15000, 30000, 60000]; const base = schedule[Math.min(retryCount, schedule.length-1)]; const jitter = Math.floor(Math.random()*2000); const delay = base + jitter;
@@ -196,10 +266,12 @@
           retryCount++; continue;
         }
         handleGenerationError(error, retryCount);
+        console.groupEnd();
         return;
       }
     }
     clearLoadingState();
+    console.groupEnd();
   }
 
   App.generate = { startGeneration };
