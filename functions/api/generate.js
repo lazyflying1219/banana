@@ -393,8 +393,17 @@ export async function onRequest(context) {
       });
     }
 
+    // Prepare optional text (remove embedded base64 image payloads for readability)
+    let textOnly = responseText;
+    if (textOnly && typeof textOnly === 'string') {
+      try {
+        textOnly = textOnly.replace(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+\/=\n\r\s]+/g, '').trim();
+      } catch (_) {}
+    }
+
     const frontendResponse = {
-      src: imageUrl
+      src: imageUrl,
+      text: textOnly,
     };
 
     return new Response(JSON.stringify(frontendResponse), {
