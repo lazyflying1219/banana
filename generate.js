@@ -136,11 +136,15 @@
   function fmt(n){ return (typeof n === 'number' ? n.toFixed(3) : n); }
 
   function shouldRetry(error){
-    if (error instanceof TypeError && error.message.includes('fetch')) return true;
+    // 明确将“未找到图片/文本回复”视为可重试类型
+    if (error && (error.isTextResponseError || error.isNoImageError)) return true;
+    if (error instanceof TypeError && error.message && error.message.includes('fetch')) return true;
     if (error.error && typeof error.error === 'string'){
-      if (error.error.includes('HTTP 5') || error.error.includes('timeout') || error.error.includes('连接') || error.error.includes('服务器')) return true;
+      const e = error.error;
+      if (e.includes('HTTP 5') || e.includes('timeout') || e.includes('连接') || e.includes('服务器')) return true;
+      if (e.includes('未找到图片数据') || e.toLowerCase().includes('no image')) return true;
     }
-    const retryable = ['timeout','network','connection','temporary','rate limit','service unavailable','internal server error'];
+    const retryable = ['timeout','network','connection','temporary','rate limit','service unavailable','internal server error','no image','not found image'];
     const msg = (error.message || error.error || '').toLowerCase();
     return retryable.some(k => msg.includes(k));
   }
@@ -156,7 +160,7 @@
     const debugInfo = document.createElement('details'); debugInfo.style.marginTop='15px';
     const errorDetails = { message: error.message||'未知错误', stack: error.stack||'无堆栈信息', name: error.name||'未知错误类型', error: errorData.error||null, details: errorData.details||null, rawResponse: errorData.rawResponse||null, responseText: errorData.responseText||null, totalRetries: finalRetryCount, isTextResponseError: error.isTextResponseError||false };
     debugInfo.innerHTML = `<summary style="cursor: pointer; color: var(--accent-color); margin-bottom: 10px;">🔍 调试信息 (点击展开)</summary><pre style="background: rgba(120,120,128,0.1); padding: 10px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(errorDetails,null,2)}</pre>`;
-    if (showRetryButton){ const retryBtn = document.createElement('button'); retryBtn.className='retry-btn'; retryBtn.textContent='手动重试'; retryBtn.addEventListener('click', ()=> App.generate.startGeneration()); errorDiv.appendChild(retryBtn); }
+    if (showRetryButton){ const retryBtn = document.createElement('button'); retryBtn.className='retry-btn'; retryBtn.textContent='手动重试'; retryBtn.addEventListener('click', ()=> App.generate.retryLast && App.generate.retryLast()); errorDiv.appendChild(retryBtn); }
     App.dom.imageDisplay.innerHTML = ''; App.dom.imageDisplay.appendChild(errorDiv);
   }
 
@@ -165,6 +169,8 @@
     const modelName = App.dom.modelNameInput ? App.dom.modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
     const selectedRatio = App.state.selectedRatio; const ratioConfig = U().ASPECT_RATIOS[selectedRatio];
     const basePrompt = (prompt || '').trim(); if (!basePrompt){ U().showNotification('请输入提示词', 'error'); return; }
+    // 记录最近一次请求，供“手动重试”使用
+    try { App.generate._last = { mode: mode || 'txt2img', basePrompt }; } catch(_) {}
 
     // Immediately show loading UI to avoid perceived delay before async work (e.g., loading ratio canvas)
     setLoadingState();
@@ -255,8 +261,10 @@
               textError.isTextResponseError = true; throw textError;
             }
           }
+          const noImageErr = new Error(result.error || 'API 返回数据中未找到图片');
+          noImageErr.isNoImageError = true; throw noImageErr;
         }
-        throw new Error(result.error || 'API 返回数据中未找到图片');
+        const generic = new Error(result.error || 'API 返回数据中未找到图片'); generic.isNoImageError = true; throw generic;
       } catch (error){
         console.error('[Generate] error on attempt', retryCount+1, error);
         if (retryCount < maxRetries && shouldRetry(error)){
@@ -274,5 +282,20 @@
     console.groupEnd();
   }
 
-  App.generate = { startGeneration };
+  function retryLast(){
+    const last = (App.generate && App.generate._last) || {};
+    let mode = last.mode;
+    let basePrompt = last.basePrompt;
+    if (!basePrompt){
+      // 回退到当前激活面板的输入框
+      const { tabTextToImage, tabImageToImage, tabImageEditor, promptInputText, promptInputImage, promptInputEditor } = App.dom;
+      const activeMode = (tabImageEditor && tabImageEditor.classList.contains('active')) ? 'editor' : ((tabImageToImage && tabImageToImage.classList.contains('active')) ? 'img2img' : 'txt2img');
+      mode = mode || activeMode;
+      basePrompt = (activeMode === 'txt2img') ? (promptInputText?.value || '') : (activeMode === 'img2img') ? (promptInputImage?.value || '') : (promptInputEditor?.value || '');
+    }
+    if (!basePrompt || !basePrompt.trim()){ U() && U().showNotification && U().showNotification('请输入提示词', 'error'); return; }
+    startGeneration({ mode: mode || 'txt2img', prompt: basePrompt });
+  }
+
+  App.generate = { startGeneration, retryLast, _last: null };
 })();

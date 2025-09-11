@@ -170,6 +170,76 @@
     });
   }
 
+  function setupLightboxZoomPan() {
+    const img = App.dom.lightboxImage;
+    const modal = App.dom.lightboxModal;
+    if (!img || !modal) return;
+
+    const state = { scale: 1, x: 0, y: 0, panning: false, startX: 0, startY: 0, lastX: 0, lastY: 0 };
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const apply = () => { img.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`; };
+    const reset = () => { state.scale = 1; state.x = 0; state.y = 0; apply(); };
+
+    const onWheel = (e) => {
+      if (!modal || modal.classList.contains('hidden')) return;
+      e.preventDefault();
+      const rect = img.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const prevScale = state.scale;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const nextScale = clamp(prevScale * factor, 1, 6);
+      if (nextScale === prevScale) return;
+      // keep mouse point stable (origin at 0,0)
+      state.x -= (mouseX) * (nextScale - prevScale);
+      state.y -= (mouseY) * (nextScale - prevScale);
+      state.scale = nextScale;
+      apply();
+    };
+
+    const onPointerDown = (e) => {
+      if (state.scale <= 1) return; // only pan when zoomed
+      e.preventDefault();
+      img.setPointerCapture(e.pointerId);
+      state.panning = true;
+      state.startX = e.clientX;
+      state.startY = e.clientY;
+      state.lastX = state.x;
+      state.lastY = state.y;
+    };
+    const onPointerMove = (e) => {
+      if (!state.panning) return;
+      e.preventDefault();
+      const dx = e.clientX - state.startX;
+      const dy = e.clientY - state.startY;
+      state.x = state.lastX + dx;
+      state.y = state.lastY + dy;
+      apply();
+    };
+    const onPointerUp = (e) => {
+      if (!state.panning) return;
+      state.panning = false;
+      try { img.releasePointerCapture(e.pointerId); } catch(_) {}
+    };
+
+    const onDblClick = () => reset();
+
+    // Bind events once
+    if (!img.dataset.zoomBound) {
+      img.classList.add('zoomable');
+      img.addEventListener('wheel', onWheel, { passive: false });
+      img.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove, { passive: false });
+      window.addEventListener('pointerup', onPointerUp, { passive: true });
+      img.addEventListener('dblclick', onDblClick);
+      img.dataset.zoomBound = 'true';
+    }
+
+    // Reset when open/close
+    const openObserver = new MutationObserver(() => { if (!modal.classList.contains('hidden')) reset(); });
+    openObserver.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+
   function setupGenerate() {
     const { generateBtn } = App.dom;
     if (!generateBtn) return;
@@ -261,6 +331,7 @@
     adjustLayout();
     setupGenerate();
     setupResultsDelegation();
+    setupLightboxZoomPan();
     setupCleanup();
 
     // default tab

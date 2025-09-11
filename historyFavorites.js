@@ -43,29 +43,44 @@
     const actions = document.createElement('div'); actions.className='grid-actions'; actions.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding:10px;background:rgba(120,120,128,0.1);border-radius:8px;'; const info=document.createElement('span'); info.style.color='var(--text-color-secondary)'; info.textContent=`共 ${items.length} 项`; const clearBtn=document.createElement('button'); clearBtn.className='clear-all-btn'; clearBtn.style.cssText='background:#dc3545;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:.85em;cursor:pointer;'; clearBtn.textContent = type==='favorites' ? '清空收藏':'清空历史'; clearBtn.addEventListener('click', (e)=>{ e.stopPropagation(); type==='favorites' ? clearAllFavorites() : clearAllHistory(); }); actions.appendChild(info); actions.appendChild(clearBtn); gridElement.appendChild(actions);
     const fragment = document.createDocumentFragment();
     const maxItems = 100; const limited = items.slice(0, maxItems);
-    limited.forEach(item=>{
+    // 缓存用于详情页左右切换
+    App.state.detailItems = limited;
+    App.state.detailType = type;
+    limited.forEach((item, idx)=>{
       const gridItem = document.createElement('div'); gridItem.className='grid-item'; gridItem.style.position='relative';
       const img = document.createElement('img'); img.decoding='async'; const imgSrc = type==='history' ? item.thumbnail : (item.thumbnail || item.src || ''); img.alt='Image'; img.src = U().getProxiedImageUrl(imgSrc); img.onerror = function(){ this.style.display='none'; const icon=document.createElement('div'); icon.innerHTML='🖼️'; icon.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100px;font-size:2em;background-color:var(--bg-color);border-radius:var(--border-radius-small);'; this.parentNode.appendChild(icon); };
       const p = document.createElement('p'); p.title=item.prompt||''; p.textContent=item.prompt||'';
       // add timestamp line
       const timeInfo = document.createElement('div'); timeInfo.className='time-info'; const ts = item.timestamp || item.id; if (ts){ const date = new Date(typeof ts === 'number' ? ts : parseInt(ts, 10)); timeInfo.textContent = date.toLocaleString(); }
       const deleteBtn = document.createElement('button'); deleteBtn.className='delete-item-btn'; deleteBtn.innerHTML='×'; deleteBtn.style.cssText='position:absolute;top:5px;right:5px;background:rgba(220,53,69,0.9);color:white;border:none;border-radius:50%;width:24px;height:24px;font-size:16px;line-height:1;cursor:pointer;display:none;z-index:10;'; gridItem.addEventListener('mouseenter',()=> deleteBtn.style.display='block'); gridItem.addEventListener('mouseleave',()=> deleteBtn.style.display='none'); deleteBtn.addEventListener('click', (e)=>{ e.stopPropagation(); const id = type==='history' ? item.id : (item.id || item.title || item.src); deleteItem(id, type); });
-      img.addEventListener('click', ()=>{
-        const fullSrc = type==='history' ? item.src : (item.src || item.thumbnail); const processedSrc = U().getProxiedImageUrl(fullSrc);
-        App.dom.historyDetailImage.src = processedSrc; App.dom.historyDetailPrompt.textContent = item.prompt || '';
-        const titleElement = document.getElementById('history-detail-title'); if (titleElement) titleElement.textContent = type==='favorites' ? '收藏详情' : '历史记录详情';
-        App.state.currentItemInDetailView = { ...item, src: fullSrc, id: item.id || item.title || item.src, sourceType: type };
-        // Bind download on the fly
-        App.dom.downloadHistoryDetailBtn.onclick = () => { const link = document.createElement('a'); link.href = processedSrc; link.download = `nano-banana-${type}-${App.state.currentItemInDetailView.id}.png`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        };
-        App.openModal(App.dom.historyDetailModal);
-      });
+      img.addEventListener('click', ()=>{ openDetailAt(idx); });
       const imageContainer=document.createElement('div'); imageContainer.className='grid-item-image-container'; imageContainer.appendChild(img);
       const contentContainer=document.createElement('div'); contentContainer.className='grid-item-content'; contentContainer.appendChild(p); contentContainer.appendChild(timeInfo);
       gridItem.appendChild(imageContainer); gridItem.appendChild(contentContainer); gridItem.appendChild(deleteBtn); fragment.appendChild(gridItem);
     });
     gridElement.appendChild(fragment);
     if (items.length>maxItems){ const moreInfo = document.createElement('p'); moreInfo.style.textAlign='center'; moreInfo.style.color='var(--text-color-secondary)'; moreInfo.textContent = `显示了前 ${maxItems} 项，共 ${items.length} 项`; gridElement.appendChild(moreInfo); }
+  }
+
+  function openDetailAt(index){
+    const items = App.state.detailItems || [];
+    const type = App.state.detailType || 'history';
+    if (!items.length) return;
+    const len = items.length;
+    const idx = ((index % len) + len) % len; // wrap
+    const item = items[idx];
+    const fullSrc = type==='history' ? item.src : (item.src || item.thumbnail);
+    const processedSrc = U().getProxiedImageUrl(fullSrc);
+    App.dom.historyDetailImage.src = processedSrc;
+    App.dom.historyDetailPrompt.textContent = item.prompt || '';
+    const titleElement = document.getElementById('history-detail-title'); if (titleElement) titleElement.textContent = type==='favorites' ? '收藏详情' : '历史记录详情';
+    App.state.currentItemInDetailView = { ...item, src: fullSrc, id: item.id || item.title || item.src, sourceType: type };
+    App.state.detailIndex = idx;
+    // Bind download per item
+    App.dom.downloadHistoryDetailBtn.onclick = () => { const link = document.createElement('a'); link.href = processedSrc; link.download = `nano-banana-${type}-${App.state.currentItemInDetailView.id}.png`; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    // Update favorite icon state
+    updateFavoriteIcon(App.dom.favoriteHistoryDetailBtn, App.state.currentItemInDetailView);
+    App.openModal(App.dom.historyDetailModal);
   }
 
   function init(){
@@ -78,9 +93,14 @@
     // export buttons
     const exportFavoritesBtn = document.getElementById('export-favorites-btn'); if (exportFavoritesBtn && !exportFavoritesBtn.dataset.eventBound){ exportFavoritesBtn.addEventListener('click', async ()=>{ try{ const favorites = await getFavorites(); const filename = `nano-banana-favorites-${new Date().toISOString().split('T')[0]}.json`; exportData(favorites, filename);}catch(e){ console.error('导出收藏失败',e); U().showNotification('导出收藏失败，请重试','error'); } }); exportFavoritesBtn.dataset.eventBound='true'; }
     const exportHistoryBtn = document.getElementById('export-history-btn'); if (exportHistoryBtn && !exportHistoryBtn.dataset.eventBound){ exportHistoryBtn.addEventListener('click', async ()=>{ try{ const history = await getHistory(); const filename = `nano-banana-history-${new Date().toISOString().split('T')[0]}.json`; exportData(history, filename);}catch(e){ console.error('导出历史失败',e); U().showNotification('导出历史记录失败，请重试','error'); } }); exportHistoryBtn.dataset.eventBound='true'; }
+    // detail prev/next
+    const prevBtn = document.getElementById('history-detail-prev');
+    const nextBtn = document.getElementById('history-detail-next');
+    if (prevBtn && !prevBtn.dataset.eventBound){ prevBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); const i = (App.state.detailIndex || 0) - 1; openDetailAt(i); }); prevBtn.dataset.eventBound='true'; }
+    if (nextBtn && !nextBtn.dataset.eventBound){ nextBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); const i = (App.state.detailIndex || 0) + 1; openDetailAt(i); }); nextBtn.dataset.eventBound='true'; }
   }
 
   function exportData(data, filename){ const jsonStr = JSON.stringify(data, null, 2); const blob = new Blob([jsonStr], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); }
 
-  App.historyFavorites = { init, addToHistory, toggleFavorite, updateTemplateFavoriteIcon, updateResultFavoriteIcon, loadFavorites, loadHistory };
+  App.historyFavorites = { init, addToHistory, toggleFavorite, updateTemplateFavoriteIcon, updateResultFavoriteIcon, loadFavorites, loadHistory, openDetailAt };
 })();

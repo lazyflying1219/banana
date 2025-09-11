@@ -580,6 +580,15 @@ html[data-theme="dark"] .main-controls .tabs button.active {
     position: relative;
 }
 
+/* Leave space for the floating action bar to avoid covering the image */
+#image-display {
+    margin-top: 56px; /* space under the top-right action buttons */
+}
+
+/* Optional: nicer cursor for zoom/pan in lightbox */
+#lightbox-image.zoomable { cursor: grab; user-select: none; }
+#lightbox-image.zoomable:active { cursor: grabbing; }
+
 #image-display img {
     max-width: 100%;
     max-height: 100%;
@@ -1462,6 +1471,8 @@ textarea:focus-visible {
     max-height: 75vh;
     object-fit: contain;
     border-radius: var(--border-radius-small);
+    transform-origin: 0 0;
+    will-change: transform;
 }
 
 .lightbox-close-btn {
