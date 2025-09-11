@@ -101,20 +101,16 @@
     } catch (_) { return String(str); }
   }
 
-  function buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations, ratioConfig }){
-    const qualityEnhancers = '4K, HDR, physically-based lighting, photorealistic materials, accurate perspective, crisp details, clean background, no borders';
+  function buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations, ratioConfig, includeNoOverlayClause }){
     let instructions = '';
     if (useAspectRatioCanvas){
-      instructions += '你是一位专业的图像生成师。严格遵循以下布局与质量约束：\n';
-      instructions += `- 重要: 最后一张图片是“宽高比画布” (${selectedRatio})，只用于框定输出比例，原有内容必须忽略。\n`;
-      instructions += `- 输出图像必须完整填充画布，不留边框或留白。\n`;
-      instructions += `- 质量要求：${qualityEnhancers}。\n`;
+      // 合并为一句：说明画布作用 + 必须填充
+      instructions += `- 最后一张图片是“宽高比画布” (${selectedRatio})，用于严格限定输出比例；最终图像必须完整填充画面，不留边框或留白。\n`;
     } else if (selectedRatio){
-      instructions += `- 输出比例：${ratioConfig.description} (${selectedRatio})，必须严格遵循，画面需充满。质量：${qualityEnhancers}。\n`;
-    } else {
-      instructions += `- 质量：${qualityEnhancers}。\n`;
+      // 去掉质量要求，仅保留比例要求
+      instructions += `- 输出比例：${ratioConfig.description} (${selectedRatio})，必须严格遵循，画面需充满。\n`;
     }
-    if (hasUserImages){ instructions += '- 你接收到的前几张图片是“参考图”，请在风格、纹理与主体上进行融合与重绘，而非简单拼贴。\n'; }
+    // 删除“参考图融合”提示（按照需求精简）
     if (annotations && annotations.length){
       instructions += '- 使用用户在编辑图中绘制的标注来指导具体布局：\n';
       annotations.forEach((a, idx)=>{
@@ -131,8 +127,10 @@
       });
       instructions += '- 请根据这些标注进行合理排版与物体摆放，保持真实的光影、材质和透视一致性；最终图像中不要包含任何标注、红框、箭头或文字的可见痕迹，仅把它们视为布局指导。\n';
     }
-    // 强化不渲染标注的要求
-    instructions += '\n- 严禁在最终图像中绘制框线、标注、说明文字或任何叠加元素。\n';
+    // “严禁绘制叠加元素”仅在图编辑模式下使用
+    if (includeNoOverlayClause){
+      instructions += '\n- 严禁在最终图像中绘制框线、标注、说明文字或任何叠加元素。\n';
+    }
     return `${instructions}\n用户的需求："${basePrompt}"`;
   }
   function fmt(n){ return (typeof n === 'number' ? n.toFixed(3) : n); }
@@ -203,7 +201,7 @@
     // de-duplicate images (by dataUrl) to reduce redundancy
     images = Array.from(new Set(images));
     const hasUserImages = images.length > 0;
-    const enhancedPrompt = buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations: App.state.editor.annotations, ratioConfig });
+    const enhancedPrompt = buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations: App.state.editor.annotations, ratioConfig, includeNoOverlayClause: (mode === 'editor') });
 
     const requestBody = { prompt: enhancedPrompt, model: modelName, images };
     // Log request summary without dumping large base64 payloads
@@ -227,15 +225,13 @@
           if (!targetIsSquare && isNearSquare && !aspectRetryDone){
             aspectRetryDone = true;
             if (U() && U().showNotification) U().showNotification('检测到模型默认输出为 1:1，正在按所选比例重试一次…','info');
-            requestBody.prompt = requestBody.prompt + '\n- 目标比例为 ' + selectedRatio + '，切勿输出 1:1。若比例不符请重新生成直至满足，必须完全填充画面且不留边框。';
-            console.warn('[Generate] detected near-square output; appended stricter ratio instruction and retrying');
+            console.warn('[Generate] detected near-square output; retrying once without changing prompt');
             continue;
           }
           if (!matches && !aspectRetryDone && selectedRatio){
             aspectRetryDone = true;
             if (U() && U().showNotification) U().showNotification('检测到输出比例不符，正在按所选比例重试一次…','info');
-            requestBody.prompt = requestBody.prompt + '\n- 如果输出宽高比与所选 ' + selectedRatio + ' 不一致，请重新生成直到满足。务必完全填充画面且不留边框。';
-            console.warn('[Generate] detected ratio mismatch; appended stricter ratio instruction and retrying');
+            console.warn('[Generate] detected ratio mismatch; retrying once without changing prompt');
             continue;
           }
           const modelTextRaw = (result.text || result.responseText || (result.rawResponse && result.rawResponse.choices && result.rawResponse.choices[0] && result.rawResponse.choices[0].message && result.rawResponse.choices[0].message.content) || '');
