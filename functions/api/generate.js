@@ -68,6 +68,14 @@ export async function onRequest(context) {
 
     // 从前端接收的aspectRatio参数
     const aspectRatio = body.aspectRatio || '16:9';
+    
+    // 添加详细的aspectRatio调试日志
+    console.log('=== Aspect Ratio Debug Info ===');
+    console.log('Received aspectRatio from frontend:', body.aspectRatio);
+    console.log('Final aspectRatio to use:', aspectRatio);
+    console.log('Model name:', modelName);
+    console.log('Model includes gemini:', modelName.includes('gemini'));
+    console.log('Model includes vertexpic:', modelName.includes('vertexpic'));
 
     // 格式1: 针对Veloera/Gemini优化的格式
     let forwardBody = {
@@ -86,6 +94,7 @@ export async function onRequest(context) {
 
     // 格式2: 根据Gemini API规范配置
     if (modelName.includes('gemini') || modelName.includes('vertexpic')) {
+      console.log('Setting generation_config for Gemini model');
       // Gemini 2.5 Flash的正确配置，包含aspect_ratio参数
       forwardBody.generation_config = {
         thinkingConfig: null,
@@ -94,12 +103,16 @@ export async function onRequest(context) {
           aspect_ratio: aspectRatio
         }
       };
+      
+      console.log('generation_config set:', JSON.stringify(forwardBody.generation_config, null, 2));
 
       // 删除可能冲突的参数
       delete forwardBody.max_tokens;
       delete forwardBody.temperature;
       delete forwardBody.top_p;
       delete forwardBody.top_k;
+    } else {
+      console.log('Model does not match Gemini/vertexpic pattern, generation_config not set');
     }
 
     // 格式3: 如果有图片，使用多模态格式
@@ -135,7 +148,15 @@ export async function onRequest(context) {
     let apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
     console.log('发送流式API请求到:', apiUrl);
-    console.log('请求体:', JSON.stringify(forwardBody, null, 2));
+    console.log('完整请求体:', JSON.stringify(forwardBody, null, 2));
+    console.log('=== 关键参数检查 ===');
+    console.log('aspectRatio 参数值:', aspectRatio);
+    console.log('generation_config 是否存在:', !!forwardBody.generation_config);
+    console.log('image_config 是否存在:', !!(forwardBody.generation_config && forwardBody.generation_config.image_config));
+    console.log('aspect_ratio 是否设置:', !!(forwardBody.generation_config && forwardBody.generation_config.image_config && forwardBody.generation_config.image_config.aspect_ratio));
+    if (forwardBody.generation_config && forwardBody.generation_config.image_config) {
+      console.log('实际的 aspect_ratio 值:', forwardBody.generation_config.image_config.aspect_ratio);
+    }
     
     // 优化超时控制 - 45秒超时，适合图片生成
     const controller = new AbortController();
