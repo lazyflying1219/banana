@@ -35,6 +35,7 @@
                 <button id="tab-text-to-image" class="active">文生图</button>
                 <button id="tab-image-to-image">图生图</button>
                 <button id="tab-image-editor">图编辑</button>
+                <button id="tab-text-fusion">文字融合</button>
             </div>
 
             <div id="text-to-image-panel" class="panel active">
@@ -60,13 +61,11 @@
                         <button id="editor-tool-rect" class="tool-button active" title="矩形">矩形</button>
                         <button id="editor-tool-circle" class="tool-button" title="圆形">圆形</button>
                         <button id="editor-tool-arrow" class="tool-button" title="箭头">箭头</button>
-                        <button id="editor-tool-text" class="tool-button" title="文字">文字</button>
                       </div>
-                      <label class="btn-like">
+                      <label class="btn-like" title="选择一张图片作为编辑底图">
                         上传编辑图 <input type="file" id="editor-base-image-input" accept="image/*" hidden>
                       </label>
-                      <button id="editor-replace-image-btn" class="secondary-button">更换编辑图</button>
-                      <label class="btn-like">
+                      <label class="btn-like" title="上传额外的参考图（与编辑图不同）">
                         上传参考图 <input type="file" id="editor-ref-image-input" accept="image/*" multiple hidden>
                       </label>
                       <label class="color-label">颜色 <input type="color" id="editor-color-input" value="#ff0000"></label>
@@ -76,7 +75,7 @@
                        <button id="editor-redo-btn" class="chip-btn" title="重做">重做</button>
                        <button id="editor-delete-selected-btn" class="chip-btn danger" title="删除选中">删除</button>
                        <button id="editor-clear-annotations-btn" class="chip-btn" title="清除全部">清空</button>
-                       <button id="editor-export-to-ref-btn" class="primary-button">加入参考图</button>
+                       <button id="editor-export-to-ref-btn" class="primary-button">保存编辑图到参考图</button>
                       </div>
                     </div>
                 </div>
@@ -91,6 +90,50 @@
                 </div>
                 <h3>提示词</h3>
                 <textarea id="prompt-input-editor" placeholder="描述你希望如何在标注区域中进行布局或放置元素，例如：把苹果放在我画的红框中，保持真实光影和透视..."></textarea>
+            </div>
+
+            <!-- 新功能：文字融合 -->
+            <div id="text-fusion-panel" class="panel">
+                <h3>文字融合</h3>
+                <div class="fusion-tools">
+                  <div class="tool-row">
+                    <label class="color-label">字体
+                      <select id="fusion-font">
+                        <option value="Noto Sans SC, Microsoft YaHei, PingFang SC, Hiragino Sans GB, Arial, sans-serif">默认中文</option>
+                        <option value="Source Han Sans SC, Noto Sans CJK SC, Microsoft YaHei, Arial, sans-serif">思源黑体</option>
+                        <option value="SimSun, Songti SC, serif">宋体</option>
+                        <option value="SimHei, Heiti SC, sans-serif">黑体</option>
+                        <option value="KaiTi, Kaiti SC, serif">楷体</option>
+                        <option value="FangSong, FangSong_GB2312, serif">仿宋</option>
+                        <option value="Arial, Helvetica, sans-serif">Arial</option>
+                        <option value="Times New Roman, serif">Times</option>
+                        <option value="Courier New, monospace">Courier</option>
+                      </select>
+                    </label>
+                    <label class="color-label">大小
+                      <input id="fusion-font-size" type="number" min="12" max="200" value="64" style="width:80px"> px
+                    </label>
+                    <label class="color-label">颜色 <input id="fusion-color" type="color" value="#000000"></label>
+                    <label class="color-label"><input id="fusion-bold" type="checkbox"> 加粗</label>
+                    <button id="fusion-add-text" class="chip-btn">添加文字</button>
+                    <input id="fusion-inline-text" type="text" placeholder="在此输入文字，随后点击画布放置" style="display:none;min-width:220px;padding:6px 8px;border:1px solid var(--border-color);border-radius:6px;">
+                    <span id="fusion-inline-hint" style="display:none;color:var(--text-color-secondary);font-size:0.85em;">提示：点击画布以放置/更新位置</span>
+                    <button id="fusion-remove-text" class="chip-btn danger">删除文字</button>
+                  </div>
+                </div>
+                <div class="fusion-body">
+                  <div class="fusion-canvas-wrap">
+                    <canvas id="fusion-canvas" width="1024" height="576"></canvas>
+                  </div>
+                  <div class="fusion-ref-wrap">
+                    <h4>参考图（图生图模式）</h4>
+                    <input type="file" id="fusion-ref-input" accept="image/*" multiple hidden>
+                    <label class="btn-like">上传参考图 <input type="file" id="fusion-ref-trigger" accept="image/*" multiple></label>
+                    <div id="fusion-ref-thumbs" class="upload-thumbs"></div>
+                  </div>
+                </div>
+                <h3>提示词</h3>
+                <textarea id="prompt-input-fusion" placeholder="输入你的提示词..."></textarea>
             </div>
 
             <!-- 比例选择器 -->
@@ -206,13 +249,13 @@
             <div class="modal-body">
                 <p>配置图片生成模型和其他偏好设置</p>
                 <label for="model-name">生成模型</label>
-                <input type="text" id="model-name" name="model-name" value="vertexpic-gemini-2.5-flash-image-preview" placeholder="vertexpic-gemini-2.5-flash-image-preview" readonly style="background-color: rgba(120,120,128,0.05); cursor: not-allowed;">
+                <input type="text" id="model-name" name="model-name" value="vertexpic2-gemini-2.5-flash-image-preview" placeholder="vertexpic2-gemini-2.5-flash-image-preview" readonly style="background-color: rgba(120,120,128,0.05); cursor: not-allowed;">
                 <small style="color: var(--text-color-secondary); font-size: 0.8em; margin-top: 5px; display: block;">当前使用后端集成的Gemini模型</small>
                 
                 <div style="margin-top: 20px; padding: 15px; background: rgba(120,120,128,0.1); border-radius: 8px;">
                     <h4 style="margin: 0 0 10px 0;">常用模型</h4>
                     <div style="display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <button class="preset-btn" data-model="vertexpic-gemini-2.5-flash-image-preview">Gemini Flash</button>
+                        <button class="preset-btn" data-model="vertexpic2-gemini-2.5-flash-image-preview">Gemini Flash</button>
                         <button class="preset-btn" data-model="dall-e-3">DALL-E 3</button>
                         <button class="preset-btn" data-model="midjourney">Midjourney</button>
                         <button class="preset-btn" data-model="stable-diffusion">Stable Diffusion</button>
@@ -289,6 +332,7 @@
     <script src="historyFavorites.js?v=1.1.0"></script>
     <script src="settings.js?v=1.1.0"></script>
     <script src="editor.js?v=1.1.0"></script>
+    <script src="textFusion.js?v=1.0"></script>
     <script src="generate.js?v=1.1.0"></script>
     <script src="app.js?v=1.1.0"></script>
 </body>
