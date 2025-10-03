@@ -66,10 +66,10 @@ export async function onRequest(context) {
   }
 
   // Exact generation_config format that user confirmed works
-  const generationConfig = {
+  const Config = {
     thinkingConfig: null,
     responseModalities: ['TEXT', 'IMAGE'],
-    image_config: { aspect_ratio: aspectRatio }
+    imageconfig: { aspectratio: aspectRatio }
   };
 
   // Final request body to provider
@@ -81,10 +81,10 @@ export async function onRequest(context) {
     // Use stream to receive image data
     stream: true,
     // Primary placement
-    generation_config: generationConfig,
+    generation_config: Config,
     // Mirror into extra_body for OpenAI-compatible aggregators that require vendor params here
     extra_body: {
-      generation_config: generationConfig
+      generation_config: Config
     }
   };
 
@@ -110,7 +110,7 @@ export async function onRequest(context) {
     return json({
       error: '请求上游API失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, generationConfig)
+      debug: buildDebug(model, aspectRatio, images.length, Config)
     }, 502, corsHeaders);
   }
   clearTimeout(timeoutId);
@@ -122,7 +122,7 @@ export async function onRequest(context) {
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
-      debug: buildDebug(model, aspectRatio, images.length, generationConfig)
+      debug: buildDebug(model, aspectRatio, images.length, Config)
     }, apiResp.status || 500, corsHeaders);
   }
 
@@ -188,7 +188,7 @@ export async function onRequest(context) {
     return json({
       error: '处理流式响应失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, generationConfig)
+      debug: buildDebug(model, aspectRatio, images.length, Config)
     }, 502, corsHeaders);
   }
 
@@ -205,7 +205,7 @@ export async function onRequest(context) {
       return json({
         src: alt,
         text: sanitizeText(parsed.text || ''),
-        debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
+        debugInfo: buildDebug(model, aspectRatio, images.length, Config, true)
       }, 200, corsHeaders);
     }
 
@@ -217,14 +217,14 @@ export async function onRequest(context) {
       return json({
         src: assumedImage,
         text: sanitizeText(parsed.text || ''),
-        debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
+        debugInfo: buildDebug(model, aspectRatio, images.length, Config, true)
       }, 200, corsHeaders);
     }
 
     return json({
       error: 'API响应中未找到图片数据',
       providerResponsePreview: JSON.stringify(apiJson).slice(0, 2000),
-      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
+      debugInfo: buildDebug(model, aspectRatio, images.length, Config),
       fullResponseForDebug: apiJson // Include full response for debugging
     }, 500, corsHeaders);
   }
@@ -233,7 +233,7 @@ export async function onRequest(context) {
     src: parsed.imageUrl,
     text: sanitizeText(parsed.text || ''),
     debugInfo: {
-      ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
+      ...buildDebug(model, aspectRatio, images.length, Config, true),
       requestSent: forwardBody
     },
     fullResponseForDebug: apiJson
@@ -287,13 +287,13 @@ function sanitizeText(text) {
   }
 }
 
-function buildDebug(model, aspectRatio, imagesCount, generationConfig, success = false) {
+function buildDebug(model, aspectRatio, imagesCount, Config, success = false) {
   return {
     model,
     aspectRatio,
     imagesCount,
     success,
-    generationConfig
+    Config
   };
 }
 
