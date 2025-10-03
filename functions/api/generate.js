@@ -85,7 +85,7 @@ export async function onRequest(context) {
     };
 
     // 格式2: 根据Gemini API规范配置
-    if (modelName.includes('gemini') || modelName.includes('vertexpic2')) {
+    if (modelName.includes('gemini') || modelName.includes('vertexpic')) {
       // Gemini 2.5 Flash的正确配置，包含aspect_ratio参数
       forwardBody.generation_config = {
         thinkingConfig: null,
