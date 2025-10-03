@@ -68,7 +68,7 @@ export async function onRequest(context) {
   // Exact generation_config format that user confirmed works
   const generationConfig = {
     thinkingConfig: null,
-    responseModalities: ['IMAGE'],
+    responseModalities: ['TEXT', 'IMAGE'],
     image_config: { aspect_ratio: aspectRatio }
   };
 
@@ -138,13 +138,28 @@ export async function onRequest(context) {
 
   // Extract image and optional text
   const parsed = extractImageAndText(apiJson);
+  
+  // If not found in content, search everywhere for base64 image data
   if (!parsed.imageUrl) {
-    // As a fallback, search whole JSON string for a base64 image
+    console.log('Image not found in content, searching entire response...');
     const rawText = JSON.stringify(apiJson);
     const alt = extractFromRaw(rawText);
     if (alt) {
+      console.log('Found image in raw response, length:', alt.length);
       return json({
         src: alt,
+        text: sanitizeText(parsed.text || ''),
+        debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
+      }, 200, corsHeaders);
+    }
+
+    // Additional fallback: search for any long base64 strings
+    const base64Match = rawText.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
+    if (base64Match) {
+      console.log('Found potential base64 pattern, assuming PNG');
+      const assumedImage = `data:image/png;base64,${base64Match[0]}`;
+      return json({
+        src: assumedImage,
         text: sanitizeText(parsed.text || ''),
         debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
       }, 200, corsHeaders);
@@ -153,7 +168,8 @@ export async function onRequest(context) {
     return json({
       error: 'API响应中未找到图片数据',
       providerResponsePreview: JSON.stringify(apiJson).slice(0, 2000),
-      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig)
+      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
+      fullResponseForDebug: apiJson // Include full response for debugging
     }, 500, corsHeaders);
   }
 
@@ -299,4 +315,3 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
-
