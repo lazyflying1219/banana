@@ -147,9 +147,9 @@ export async function onRequest(context) {
         console.log(`发送${attempt}流式API请求到:`, apiUrl);
         console.log('请求体:', JSON.stringify(forwardBody, null, 2));
         
-        // 添加超时控制
+        // 添加超时控制 - 设置为90秒，给图片生成更多时间
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 60秒超时
+        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90秒超时
         
         try {
           apiResponse = await fetch(apiUrl, {
