@@ -4,13 +4,23 @@
   const App = window.App;
 
   const ASPECT_RATIOS = {
+    // Landscape ratios
+    '21:9': { label: '21:9', description: '超宽屏', baseImage: null },
+    '16:9': { label: '16:9', description: '宽屏', baseImage: null },
+    '4:3': { label: '4:3', description: '标准', baseImage: null },
+    '3:2': { label: '3:2', description: '相机', baseImage: null },
+    
+    // Square ratio
     '1:1': { label: '1:1', description: '正方形', baseImage: null },
-    '16:9': { label: '16:9', description: '宽屏', baseImage: '16_9.png' },
-    '9:16': { label: '9:16', description: '竖屏', baseImage: '9_16.png' },
-    '4:3': { label: '4:3', description: '标准', baseImage: '4_3.png' },
-    '3:4': { label: '3:4', description: '竖版标准', baseImage: '3_4.png' },
-    '3:2': { label: '3:2', description: '相机', baseImage: '3_2.png' },
-    '2:3': { label: '2:3', description: '竖版相机', baseImage: '2_3.png' }
+    
+    // Portrait ratios
+    '9:16': { label: '9:16', description: '竖屏', baseImage: null },
+    '3:4': { label: '3:4', description: '竖版标准', baseImage: null },
+    '2:3': { label: '2:3', description: '竖版相机', baseImage: null },
+    
+    // Flexible ratios
+    '5:4': { label: '5:4', description: '灵活横向', baseImage: null },
+    '4:5': { label: '4:5', description: '灵活竖向', baseImage: null }
   };
 
   function showNotification(message, type = 'info') {

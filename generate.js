@@ -103,12 +103,9 @@
 
   function buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations, ratioConfig, includeNoOverlayClause }){
     let instructions = '';
-    if (useAspectRatioCanvas){
-      // 合并为一句：说明画布作用 + 必须填充
-      instructions += `- 最后一张图片是“宽高比画布” (${selectedRatio})，用于严格限定输出比例；最终图像必须完整填充画面，不留边框或留白。\n`;
-    } else if (selectedRatio){
-      // 去掉质量要求，仅保留比例要求
-      instructions += `- 输出比例：${ratioConfig.description} (${selectedRatio})，必须严格遵循，画面需充满。\n`;
+    // 不再提及比例画布,因为API会自动处理比例
+    if (selectedRatio && ratioConfig){
+      instructions += `- 输出比例要求：${ratioConfig.description} (${selectedRatio})。\n`;
     }
     // 删除“参考图融合”提示（按照需求精简）
     if (annotations && annotations.length){
@@ -165,51 +162,73 @@
   }
 
   async function startGeneration({ mode, prompt } = {}){
+    // If text fusion panel is active, treat the fusion canvas as the ratio+text base image
+    try {
+      if (App.dom.tabTextFusion && App.dom.tabTextFusion.classList.contains('active') && App.textFusion){
+        const fusionBase = App.textFusion.exportDataUrl();
+        if (fusionBase){
+          // Prepend fusion canvas as strongest conditioning image
+          if (!App.state.uploadedFiles) App.state.uploadedFiles = [];
+          // ensure not duplicated
+          const exists = App.state.uploadedFiles.some(f=> f && f.dataUrl === fusionBase);
+          if (!exists){ App.state.uploadedFiles.unshift({ file: null, dataUrl: fusionBase }); }
+          // If textFusion has refs, switch to img2img for this round
+          const tfMode = App.textFusion.getMode();
+          if (tfMode === 'img2img'){ mode = 'img2img'; }
+        }
+        // Merge fusion refs into images later via existing img2img pipeline
+      }
+    } catch(_){}
     const apiUrl = '/api/generate';
     const modelName = App.dom.modelNameInput ? App.dom.modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
     const selectedRatio = App.state.selectedRatio; const ratioConfig = U().ASPECT_RATIOS[selectedRatio];
     const basePrompt = (prompt || '').trim(); if (!basePrompt){ U().showNotification('请输入提示词', 'error'); return; }
-    // 记录最近一次请求，供“手动重试”使用
+    // 记录最近一次请求，供"手动重试"使用
     try { App.generate._last = { mode: mode || 'txt2img', basePrompt }; } catch(_) {}
 
-    // Immediately show loading UI to avoid perceived delay before async work (e.g., loading ratio canvas)
+    // Immediately show loading UI to avoid perceived delay before async work
     setLoadingState();
 
-    // images collection per mode
+    // images collection per mode (不再包含比例底图)
     let images = [];
-    let useAspectRatioCanvas = false;
     console.groupCollapsed('[Generate] start');
     console.log('mode:', mode || 'txt2img');
     console.log('model:', modelName);
     console.log('selectedRatio:', selectedRatio, ratioConfig);
+    
     if (mode === 'img2img'){
       images = App.state.uploadedFiles.map(f=> f.dataUrl);
-      // include aspect ratio canvas if applicable
-      if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
-        const ratioBase = await imageToDataUrl(ratioConfig.baseImage);
-        if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for img2img'); }
-      }
+      console.debug('[Generate] img2img mode with', images.length, 'user images');
     }
     else if (mode === 'editor'){
       images = [...App.state.editor.refImages];
       if (App.state.editor.baseImageDataUrl) images.push(App.state.editor.baseImageDataUrl);
-      // also include aspect ratio canvas as last if applicable
-      if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
-        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for editor'); }
-      }
-    } else { // txt2img
-      // only use ratio canvas if not 1:1
-      if (ratioConfig && ratioConfig.baseImage && selectedRatio !== '1:1'){
-        const ratioBase = await imageToDataUrl(ratioConfig.baseImage); if (ratioBase) { images.push(ratioBase); useAspectRatioCanvas = true; console.debug('[Generate] added ratio canvas for txt2img'); }
-      }
+      console.debug('[Generate] editor mode with', images.length, 'images');
     }
+    // txt2img mode: 不需要添加任何图片
 
     // de-duplicate images (by dataUrl) to reduce redundancy
     images = Array.from(new Set(images));
     const hasUserImages = images.length > 0;
-    const enhancedPrompt = buildEnhancedPrompt({ basePrompt, selectedRatio, hasUserImages, useAspectRatioCanvas, annotations: App.state.editor.annotations, ratioConfig, includeNoOverlayClause: (mode === 'editor') });
+    
+    // 简化的prompt构建(不再提及比例画布)
+    const enhancedPrompt = buildEnhancedPrompt({
+      basePrompt,
+      selectedRatio,
+      hasUserImages,
+      useAspectRatioCanvas: false, // 不再使用比例画布
+      annotations: App.state.editor.annotations,
+      ratioConfig,
+      includeNoOverlayClause: (mode === 'editor')
+    });
 
-    const requestBody = { prompt: enhancedPrompt, model: modelName, images };
+    // 将比例信息作为独立参数传递给后端API
+    const requestBody = {
+      prompt: enhancedPrompt,
+      model: modelName,
+      images,
+      aspectRatio: selectedRatio // 新增:直接传递比例参数
+    };
     // Log request summary without dumping large base64 payloads
     console.table([{ key: 'imagesCount', value: images.length }, { key: 'useAspectRatioCanvas', value: useAspectRatioCanvas }]);
     console.log('prompt.length:', requestBody.prompt.length);
