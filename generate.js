@@ -230,7 +230,7 @@
       aspectRatio: selectedRatio // 新增:直接传递比例参数
     };
     // Log request summary without dumping large base64 payloads
-    console.table([{ key: 'imagesCount', value: images.length }, { key: 'useAspectRatioCanvas', value: useAspectRatioCanvas }]);
+    console.table([{ key: 'imagesCount', value: images.length }, { key: 'aspectRatio', value: selectedRatio }]);
     console.log('prompt.length:', requestBody.prompt.length);
     console.log('prompt.preview:', requestBody.prompt.slice(0, 400));
 
