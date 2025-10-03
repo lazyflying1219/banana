@@ -66,6 +66,9 @@ export async function onRequest(context) {
       }
     }
 
+    // 从前端接收的aspectRatio参数
+    const aspectRatio = body.aspectRatio || '16:9';
+
     // 格式1: 针对Veloera/Gemini优化的格式
     let forwardBody = {
       model: modelName,
@@ -83,13 +86,13 @@ export async function onRequest(context) {
 
     // 格式2: 根据Gemini API规范配置
     if (modelName.includes('gemini') || modelName.includes('vertexpic')) {
-      // Gemini 2.5 Flash的正确配置
-      forwardBody.generationConfig = {
-        responseModalities: ["IMAGE", "TEXT"],
-        maxOutputTokens: 8192,
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40
+      // Gemini 2.5 Flash的正确配置，包含aspect_ratio参数
+      forwardBody.generation_config = {
+        thinkingConfig: null,
+        responseModalities: ["TEXT", "IMAGE"],
+        image_config: {
+          aspect_ratio: aspectRatio
+        }
       };
 
       // 删除可能冲突的参数
