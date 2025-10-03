@@ -229,6 +229,14 @@
       images,
       aspectRatio: selectedRatio // 新增:直接传递比例参数
     };
+    
+    // 添加详细的aspectRatio调试日志
+    console.log('=== Frontend Aspect Ratio Debug ===');
+    console.log('selectedRatio from state:', selectedRatio);
+    console.log('ratioConfig:', ratioConfig);
+    console.log('requestBody.aspectRatio:', requestBody.aspectRatio);
+    console.log('Full request body keys:', Object.keys(requestBody));
+    
     // Log request summary without dumping large base64 payloads
     console.table([{ key: 'imagesCount', value: images.length }, { key: 'aspectRatio', value: selectedRatio }]);
     console.log('prompt.length:', requestBody.prompt.length);
