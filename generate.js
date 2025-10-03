@@ -180,7 +180,7 @@
       }
     } catch(_){}
     const apiUrl = '/api/generate';
-    const modelName = App.dom.modelNameInput ? App.dom.modelNameInput.value.trim() : 'vertexpic-gemini-2.5-flash-image-preview';
+    const modelName = App.dom.modelNameInput ? App.dom.modelNameInput.value.trim() : 'vertexpic2-gemini-2.5-flash-image-preview';
     const selectedRatio = App.state.selectedRatio; const ratioConfig = U().ASPECT_RATIOS[selectedRatio];
     const basePrompt = (prompt || '').trim(); if (!basePrompt){ U().showNotification('请输入提示词', 'error'); return; }
     // 记录最近一次请求，供"手动重试"使用
