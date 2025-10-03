@@ -457,6 +457,7 @@ export async function onRequest(context) {
     const frontendResponse = {
       src: imageUrl,
       text: textOnly,
+      debugInfo: debugInfo, // 添加调试信息到响应中
     };
 
     return new Response(JSON.stringify(frontendResponse), {
