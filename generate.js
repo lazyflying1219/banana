@@ -270,6 +270,14 @@
           const modelTextRaw = (result.text || result.responseText || (result.rawResponse && result.rawResponse.choices && result.rawResponse.choices[0] && result.rawResponse.choices[0].message && result.rawResponse.choices[0].message.content) || '');
           const modelText = sanitizeModelText(modelTextRaw);
           clearLoadingState();
+          
+          // 显示后端调试信息
+          if (result.debugInfo && result.debugInfo.aspectRatioDebug) {
+            console.groupCollapsed('[Generate] Backend Aspect Ratio Debug');
+            console.table(result.debugInfo.aspectRatioDebug);
+            console.groupEnd();
+          }
+          
           await displayImage({ src: result.src, prompt: basePrompt, model: modelName, textResponse: modelText, finalPrompt: requestBody.prompt });
           console.groupCollapsed('[Generate] success');
           console.log('image src length:', String(result.src).length);
