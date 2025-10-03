@@ -115,6 +115,19 @@ export async function onRequest(context) {
       console.log('Model does not match Gemini/vertexpic pattern, generation_config not set');
     }
 
+    // 将调试信息添加到响应中，以便前端可以看到
+    debugInfo.aspectRatioDebug = {
+      receivedFromFrontend: body.aspectRatio,
+      finalAspectRatio: aspectRatio,
+      modelName: modelName,
+      modelMatchesGemini: modelName.includes('gemini'),
+      modelMatchesVertexpic: modelName.includes('vertexpic'),
+      generationConfigSet: !!(forwardBody.generation_config),
+      imageConfigSet: !!(forwardBody.generation_config && forwardBody.generation_config.image_config),
+      aspectRatioSet: !!(forwardBody.generation_config && forwardBody.generation_config.image_config && forwardBody.generation_config.image_config.aspect_ratio),
+      finalGenerationConfig: forwardBody.generation_config || null
+    };
+
     // 格式3: 如果有图片，使用多模态格式
     if (body.images && body.images.length > 0) {
       const content = [
