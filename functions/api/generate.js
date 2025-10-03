@@ -78,8 +78,8 @@ export async function onRequest(context) {
     messages: [
       { role: 'user', content }
     ],
-    // Non-stream for reliability
-    stream: false,
+    // Use stream to receive image data
+    stream: true,
     // Primary placement
     generation_config: generationConfig,
     // Mirror into extra_body for OpenAI-compatible aggregators that require vendor params here
@@ -126,11 +126,67 @@ export async function onRequest(context) {
     }, apiResp.status || 500, corsHeaders);
   }
 
+  // Handle streaming response to extract image data
+  let fullContent = '';
+  let buffer = '';
+  
   try {
-    apiJson = await apiResp.json();
+    const reader = apiResp.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr) {
+              const data = JSON.parse(jsonStr);
+              if (data.choices?.[0]?.delta?.content) {
+                fullContent += data.choices[0].delta.content;
+              }
+            }
+          } catch (e) {
+            console.log('Parse error for line:', line.slice(0, 100));
+          }
+        }
+      }
+    }
+    
+    // Process final buffer
+    if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
+      try {
+        const jsonStr = buffer.slice(6).trim();
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          if (data.choices?.[0]?.delta?.content) {
+            fullContent += data.choices[0].delta.content;
+          }
+        }
+      } catch (e) {
+        console.log('Parse error for final buffer');
+      }
+    }
+    
+    console.log('Stream content length:', fullContent.length);
+    
+    // Construct response object
+    apiJson = {
+      choices: [{
+        message: {
+          content: fullContent
+        }
+      }]
+    };
   } catch (e) {
     return json({
-      error: '解析上游JSON失败',
+      error: '处理流式响应失败',
       details: e.message || String(e),
       debug: buildDebug(model, aspectRatio, images.length, generationConfig)
     }, 502, corsHeaders);
