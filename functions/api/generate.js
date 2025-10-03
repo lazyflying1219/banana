@@ -68,7 +68,7 @@ export async function onRequest(context) {
   // Exact generation_config format that user confirmed works
   const generationConfig = {
     thinkingConfig: null,
-    responseModalities: ['TEXT', 'IMAGE'],
+    responseModalities: ['IMAGE'],
     image_config: { aspect_ratio: aspectRatio }
   };
 
@@ -299,3 +299,4 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
+
