@@ -65,11 +65,11 @@ export async function onRequest(context) {
     });
   }
 
-  // Exact generation_config format that user confirmed works
-  const Config = {
+  // Official Gemini API format
+  const generationConfig = {
     thinkingConfig: null,
     responseModalities: ['TEXT', 'IMAGE'],
-    imageconfig: { aspectratio: aspectRatio }
+    imageConfig: { aspectRatio: aspectRatio }
   };
 
   // Final request body to provider
@@ -80,11 +80,11 @@ export async function onRequest(context) {
     ],
     // Use stream to receive image data
     stream: true,
-    // Primary placement
-    generation_config: Config,
-    // Mirror into extra_body for OpenAI-compatible aggregators that require vendor params here
+    // Primary placement - use camelCase for Gemini API
+    generationConfig: generationConfig,
+    // Mirror into extra_body for compatibility
     extra_body: {
-      generation_config: Config
+      generationConfig: generationConfig
     }
   };
 
@@ -110,7 +110,7 @@ export async function onRequest(context) {
     return json({
       error: '请求上游API失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, Config)
+      debug: buildDebug(model, aspectRatio, images.length, config)
     }, 502, corsHeaders);
   }
   clearTimeout(timeoutId);
@@ -122,7 +122,7 @@ export async function onRequest(context) {
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
-      debug: buildDebug(model, aspectRatio, images.length, Config)
+      debug: buildDebug(model, aspectRatio, images.length, config)
     }, apiResp.status || 500, corsHeaders);
   }
 
@@ -188,7 +188,7 @@ export async function onRequest(context) {
     return json({
       error: '处理流式响应失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, Config)
+      debug: buildDebug(model, aspectRatio, images.length, config)
     }, 502, corsHeaders);
   }
 
@@ -205,7 +205,7 @@ export async function onRequest(context) {
       return json({
         src: alt,
         text: sanitizeText(parsed.text || ''),
-        debugInfo: buildDebug(model, aspectRatio, images.length, Config, true)
+        debugInfo: buildDebug(model, aspectRatio, images.length, config, true)
       }, 200, corsHeaders);
     }
 
@@ -217,14 +217,14 @@ export async function onRequest(context) {
       return json({
         src: assumedImage,
         text: sanitizeText(parsed.text || ''),
-        debugInfo: buildDebug(model, aspectRatio, images.length, Config, true)
+        debugInfo: buildDebug(model, aspectRatio, images.length, config, true)
       }, 200, corsHeaders);
     }
 
     return json({
       error: 'API响应中未找到图片数据',
       providerResponsePreview: JSON.stringify(apiJson).slice(0, 2000),
-      debugInfo: buildDebug(model, aspectRatio, images.length, Config),
+      debugInfo: buildDebug(model, aspectRatio, images.length, config),
       fullResponseForDebug: apiJson // Include full response for debugging
     }, 500, corsHeaders);
   }
@@ -233,7 +233,7 @@ export async function onRequest(context) {
     src: parsed.imageUrl,
     text: sanitizeText(parsed.text || ''),
     debugInfo: {
-      ...buildDebug(model, aspectRatio, images.length, Config, true),
+      ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
       requestSent: forwardBody
     },
     fullResponseForDebug: apiJson
@@ -287,13 +287,13 @@ function sanitizeText(text) {
   }
 }
 
-function buildDebug(model, aspectRatio, imagesCount, Config, success = false) {
+function buildDebug(model, aspectRatio, imagesCount, config, success = false) {
   return {
     model,
     aspectRatio,
     imagesCount,
     success,
-    Config
+    config
   };
 }
 
