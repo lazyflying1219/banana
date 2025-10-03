@@ -51,7 +51,7 @@ export async function onRequest(context) {
     }
 
     // 尝试多种API格式，模拟CherryStudio的请求方式
-    const modelName = body.model || 'vertexpic-gemini-2.5-flash-image-preview';
+    const modelName = body.model || 'vertexpic2-gemini-2.5-flash-image-preview';
 
     // 为生图优化提示词
     let optimizedPrompt = body.prompt;
@@ -85,7 +85,7 @@ export async function onRequest(context) {
     };
 
     // 格式2: 根据Gemini API规范配置
-    if (modelName.includes('gemini') || modelName.includes('vertexpic')) {
+    if (modelName.includes('gemini') || modelName.includes('vertexpic2')) {
       // Gemini 2.5 Flash的正确配置，包含aspect_ratio参数
       forwardBody.generation_config = {
         thinkingConfig: null,
@@ -161,11 +161,34 @@ export async function onRequest(context) {
       throw fetchError;
     }
 
-    console.log('API响应状态:', apiResponse.status);
+    console.log('===== API响应详情 =====');
+    console.log('状态码:', apiResponse.status);
+    console.log('状态文本:', apiResponse.statusText);
+    console.log('响应头:', JSON.stringify([...apiResponse.headers.entries()], null, 2));
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      console.error('API错误响应:', errorText);
+      console.error('===== API错误详情 =====');
+      console.error('状态码:', apiResponse.status);
+      console.error('状态文本:', apiResponse.statusText);
+      console.error('错误响应体:', errorText);
+      console.error('请求URL:', apiUrl);
+      console.error('请求模型:', modelName);
+      console.error('请求比例:', aspectRatio);
+      console.error('提示词长度:', optimizedPrompt.length);
+      console.error('提示词前100字符:', optimizedPrompt.substring(0, 100));
+      console.error('是否包含图片:', !!(body.images && body.images.length > 0));
+      console.error('图片数量:', body.images ? body.images.length : 0);
+      
+      // 尝试解析错误信息
+      let parsedError;
+      try {
+        parsedError = JSON.parse(errorText);
+        console.error('解析后的错误:', JSON.stringify(parsedError, null, 2));
+      } catch (e) {
+        console.error('无法解析错误JSON,原始错误文本:', errorText);
+      }
+      
       throw new Error(`HTTP ${apiResponse.status}: ${errorText}`);
     }
 
