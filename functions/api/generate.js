@@ -232,7 +232,9 @@ export async function onRequest(context) {
   return json({
     src: parsed.imageUrl,
     text: sanitizeText(parsed.text || ''),
-    debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
+    debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true),
+    fullResponseForDebug: apiJson,
+    requestSent: forwardBody
   }, 200, corsHeaders);
 }
 
