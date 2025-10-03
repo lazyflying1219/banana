@@ -235,7 +235,8 @@ export async function onRequest(context) {
     debugInfo: {
       ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
       requestSent: forwardBody
-    }
+    },
+    fullResponseForDebug: apiJson
   }, 200, corsHeaders);
 }
 
