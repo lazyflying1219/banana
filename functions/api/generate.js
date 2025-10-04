@@ -65,8 +65,9 @@ export async function onRequest(context) {
     });
   }
 
-  // VELOERA Simple Override Mode - pass generation_config directly at top level
-  // This allows VELOERA's parameter override system to merge it automatically
+  // Gemini API format based on official documentation
+  // Reference: https://ai.google.dev/gemini-api/docs/openai?hl=zh-cn (OpenAI compatibility)
+  // Reference: https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn (Image generation with aspect_ratio)
   const forwardBody = {
     model,
     messages: [
@@ -76,12 +77,13 @@ export async function onRequest(context) {
       }
     ],
     stream: true,
-    // Use simple override mode - VELOERA will merge this configuration
-    generation_config: {
-      thinkingConfig: null,
-      responseModalities: ['TEXT', 'IMAGE'],
-      image_config: {
-        aspect_ratio: aspectRatio
+    // According to Gemini docs, use extra_body to pass generation config
+    extra_body: {
+      generation_config: {
+        response_modalities: ['TEXT', 'IMAGE'],
+        image_config: {
+          aspect_ratio: aspectRatio
+        }
       }
     }
   };
@@ -112,7 +114,12 @@ export async function onRequest(context) {
     return json({
       error: '请求上游API失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config)
+      debug: {
+        model,
+        aspectRatio,
+        imagesCount: images.length,
+        generationConfig: forwardBody.generation_config
+      }
     }, 502, corsHeaders);
   }
   clearTimeout(timeoutId);
@@ -128,7 +135,12 @@ export async function onRequest(context) {
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
-      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config),
+      debug: {
+        model,
+        aspectRatio,
+        imagesCount: images.length,
+        generationConfig: forwardBody.generation_config
+      },
       requestSent: forwardBody
     }, apiResp.status || 500, corsHeaders);
   }
@@ -234,7 +246,13 @@ export async function onRequest(context) {
         return json({
           src: alt,
           text: sanitizeText(parsed.text || ''),
-          debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true)
+          debugInfo: {
+            model,
+            aspectRatio,
+            imagesCount: images.length,
+            generationConfig: forwardBody.generation_config,
+            success: true
+          }
         }, 200, corsHeaders);
       }
 
@@ -246,14 +264,25 @@ export async function onRequest(context) {
         return json({
           src: assumedImage,
           text: sanitizeText(parsed.text || ''),
-          debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true)
+          debugInfo: {
+            model,
+            aspectRatio,
+            imagesCount: images.length,
+            generationConfig: forwardBody.generation_config,
+            success: true
+          }
         }, 200, corsHeaders);
       }
 
       return json({
         error: 'API响应中未找到图片数据',
         providerResponsePreview: fullContent.slice(0, 2000),
-        debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config),
+        debugInfo: {
+          model,
+          aspectRatio,
+          imagesCount: images.length,
+          generationConfig: forwardBody.generation_config
+        },
         requestSent: forwardBody,
         fullResponseForDebug: apiJson
       }, 500, corsHeaders);
@@ -266,7 +295,11 @@ export async function onRequest(context) {
       src: parsed.imageUrl,
       text: sanitizeText(parsed.text || ''),
       debugInfo: {
-        ...buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true),
+        model,
+        aspectRatio,
+        imagesCount: images.length,
+        generationConfig: forwardBody.generation_config,
+        success: true,
         requestSent: forwardBody,
         streamChunks: chunkCount
       }
@@ -277,7 +310,12 @@ export async function onRequest(context) {
     return json({
       error: '处理流式响应失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config)
+      debug: {
+        model,
+        aspectRatio,
+        imagesCount: images.length,
+        generationConfig: forwardBody.generation_config
+      }
     }, 502, corsHeaders);
   }
 }
