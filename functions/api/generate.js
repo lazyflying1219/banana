@@ -1,4 +1,4 @@
-// Cloudflare Pages Function: /api/generate - Fixed for veloe proxy compatibility
+// Cloudflare Pages Function: /api/generate - Fixed for VELOERA compatibility
 // Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image-preview
 
 export async function onRequest(context) {
@@ -61,16 +61,16 @@ export async function onRequest(context) {
     });
   }
 
-  // Gemini config structure (as per official docs)
-  const config = {
+  // VELOERA/Gemini config structure - use snake_case as shown in working example
+  const generationConfig = {
     thinkingConfig: null,
-    responseModalities: ['IMAGE'],  // Use 'IMAGE' not 'TEXT' when generating images
-    imageConfig: {
-      aspectRatio: aspectRatio
+    responseModalities: ['TEXT', 'IMAGE'],  // Include both TEXT and IMAGE
+    image_config: {  // Use snake_case: image_config not imageConfig
+      aspect_ratio: aspectRatio  // Use snake_case: aspect_ratio not aspectRatio
     }
   };
 
-  // Final request body - use OpenAI messages format but add Gemini config
+  // Final request body - use OpenAI messages format with generation_config
   const forwardBody = {
     model,
     messages: [
@@ -80,12 +80,8 @@ export async function onRequest(context) {
       }
     ],
     stream: true,
-    // Add config at root level
-    config: config,
-    // Also try in extra_body for compatibility
-    extra_body: {
-      config: config
-    }
+    // Use snake_case: generation_config (this is the key!)
+    generation_config: generationConfig
   };
 
   const apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
@@ -110,7 +106,7 @@ export async function onRequest(context) {
     return json({
       error: '请求上游API失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, config)
+      debug: buildDebug(model, aspectRatio, images.length, generationConfig)
     }, 502, corsHeaders);
   }
   clearTimeout(timeoutId);
@@ -122,7 +118,7 @@ export async function onRequest(context) {
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
-      debug: buildDebug(model, aspectRatio, images.length, config),
+      debug: buildDebug(model, aspectRatio, images.length, generationConfig),
       requestSent: forwardBody
     }, apiResp.status || 500, corsHeaders);
   }
@@ -210,7 +206,7 @@ export async function onRequest(context) {
         return json({
           src: alt,
           text: sanitizeText(parsed.text || ''),
-          debugInfo: buildDebug(model, aspectRatio, images.length, config, true)
+          debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
         }, 200, corsHeaders);
       }
 
@@ -222,14 +218,14 @@ export async function onRequest(context) {
         return json({
           src: assumedImage,
           text: sanitizeText(parsed.text || ''),
-          debugInfo: buildDebug(model, aspectRatio, images.length, config, true)
+          debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig, true)
         }, 200, corsHeaders);
       }
 
       return json({
         error: 'API响应中未找到图片数据',
         providerResponsePreview: fullContent.slice(0, 2000),
-        debugInfo: buildDebug(model, aspectRatio, images.length, config),
+        debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
         requestSent: forwardBody,
         fullResponseForDebug: apiJson
       }, 500, corsHeaders);
@@ -239,7 +235,7 @@ export async function onRequest(context) {
       src: parsed.imageUrl,
       text: sanitizeText(parsed.text || ''),
       debugInfo: {
-        ...buildDebug(model, aspectRatio, images.length, config, true),
+        ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
         requestSent: forwardBody
       }
     }, 200, corsHeaders);
@@ -248,7 +244,7 @@ export async function onRequest(context) {
     return json({
       error: '处理流式响应失败',
       details: e.message || String(e),
-      debug: buildDebug(model, aspectRatio, images.length, config)
+      debug: buildDebug(model, aspectRatio, images.length, generationConfig)
     }, 502, corsHeaders);
   }
 }
