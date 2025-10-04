@@ -65,9 +65,9 @@ export async function onRequest(context) {
     });
   }
 
-  // Gemini API format based on official documentation
-  // Reference: https://ai.google.dev/gemini-api/docs/openai?hl=zh-cn (OpenAI compatibility)
-  // Reference: https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn (Image generation with aspect_ratio)
+  // Gemini API format - Direct top-level generation_config
+  // Matching your working VELOERA parameter override configuration
+  // Reference: https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn
   const forwardBody = {
     model,
     messages: [
@@ -77,13 +77,12 @@ export async function onRequest(context) {
       }
     ],
     stream: true,
-    // According to Gemini docs, use extra_body to pass generation config
-    extra_body: {
-      generation_config: {
-        response_modalities: ['TEXT', 'IMAGE'],
-        image_config: {
-          aspect_ratio: aspectRatio
-        }
+    // Direct top-level configuration matching your working VELOERA format
+    generation_config: {
+      thinkingConfig: null,
+      response_modalities: ['TEXT', 'IMAGE'],
+      image_config: {
+        aspect_ratio: aspectRatio
       }
     }
   };
