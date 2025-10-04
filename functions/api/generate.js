@@ -1,11 +1,5 @@
-// Cloudflare Pages Function: /api/generate
-// Purpose: Ensure VELOERA correctly applies image_config.aspect_ratio without server-side overrides
-// Key points derived from VELOERA docs and your working override:
-// - Use OpenAI-compatible messages (field "messages" is required)
-// - Use snake_case generation_config with image_config.aspect_ratio
-// - Mirror generation_config into extra_body.generation_config
-// - Disable streaming (stream: false) so config is reliably applied
-// - If ratio != 1:1 and model ends with "-image-preview", auto-switch to "-image" for non-square output
+// Cloudflare Pages Function: /api/generate - With detailed debug logging
+// Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image-preview
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -15,6 +9,7 @@ export async function onRequest(context) {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
+
   if (request.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
   }
@@ -22,7 +17,7 @@ export async function onRequest(context) {
   let body;
   try {
     body = await request.json();
-  } catch {
+  } catch (_) {
     return json({ error: '无效的JSON请求体' }, 400, corsHeaders);
   }
 
@@ -30,24 +25,17 @@ export async function onRequest(context) {
   if (!apiKey) {
     return json({
       error: '缺少API密钥',
-      details: '请在环境变量中设置 VELAO_API_KEY'
+      details: '请在环境变量中设置 VELAO_API_KEY',
     }, 500, corsHeaders);
   }
 
-  // Inputs
-  let model = String(body.model || 'vertexpic2-gemini-2.5-flash-image-preview').trim();
+  const model = String(body.model || 'vertexpic2-gemini-2.5-flash-image-preview').trim();
   const promptRaw = String(body.prompt || '').trim();
   if (!promptRaw) {
     return json({ error: '缺少提示词 prompt' }, 400, corsHeaders);
   }
-  const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
 
-  // If using preview model but want non-1:1 ratio, switch to non-preview for stable ratio support
-  if (aspectRatio !== '1:1' && model.endsWith('-image-preview')) {
-    model = model.replace('-image-preview', '-image');
-  }
-
-  // Ensure prompt clearly asks for image
+  // Ensure prompt clearly requests an image when using Gemini image preview variants
   let optimizedPrompt = promptRaw;
   const pr = optimizedPrompt.toLowerCase();
   if ((model.includes('gemini') || model.includes('image') || model.includes('vertexpic'))
@@ -55,60 +43,60 @@ export async function onRequest(context) {
     optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
   }
 
-  // Optional images
+  // Aspect ratio passthrough
+  const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
+  
+  console.log('=== API Request Debug ===');
+  console.log('Received aspectRatio from frontend:', body.aspectRatio);
+  console.log('Normalized aspectRatio:', aspectRatio);
+
+  // Optional user images (data URLs or remote URLs)
   const images = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
 
-  // OpenAI-compatible multimodal message content
-  const content = [{ type: 'text', text: optimizedPrompt }];
+  // Build multi-modal content array for OpenAI format
+  const content = [
+    { type: 'text', text: optimizedPrompt }
+  ];
+  
   for (const img of images) {
-    content.push({ type: 'image_url', image_url: { url: img } });
+    content.push({
+      type: 'image_url',
+      image_url: { url: img }
+    });
   }
 
-  // Gemini-native parts (included in extra_body for maximum compatibility)
-  const parts = [{ text: optimizedPrompt }];
-  for (const img of images) {
-    if (typeof img === 'string' && img.startsWith('data:image/')) {
-      const m = img.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-      if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } });
-    } else if (typeof img === 'string' && /^https?:\/\//i.test(img)) {
-      // Some providers won't fetch remote URLs in parts; include a reference line
-      parts.push({ text: `Reference image URL: ${img}` });
-    }
-  }
-
-  // VELOERA-compatible generation_config (snake_case) exactly like your working override
-  const generationConfig = {
-    thinkingConfig: null,
-    responseModalities: ['TEXT', 'IMAGE'],
-    image_config: {
-      aspect_ratio: aspectRatio
-    }
-  };
-
-  // Build final request body
+  // VELOERA Simple Override Mode - pass generation_config directly at top level
+  // This allows VELOERA's parameter override system to merge it automatically
   const forwardBody = {
     model,
     messages: [
-      { role: 'user', content }
+      {
+        role: 'user',
+        content: content
+      }
     ],
-    // Non-stream to ensure config is applied reliably across proxies
     stream: true,
-    // Primary (snake_case) placement at top-level
-    generation_config: generationConfig,
-    // Mirror into extra_body for proxies that only read from here
-    extra_body: {
-      generation_config: generationConfig,
-      // Provide Gemini-native contents as an extra hint for router implementations
-      contents: [{ role: 'user', parts }]
+    // Use simple override mode - VELOERA will merge this configuration
+    generation_config: {
+      thinkingConfig: null,
+      responseModalities: ['TEXT', 'IMAGE'],
+      image_config: {
+        aspect_ratio: aspectRatio
+      }
     }
   };
 
+  console.log('=== Full request body to API ===');
+  console.log(JSON.stringify(forwardBody, null, 2));
+  console.log('=== End request body ===');
+
   const apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
-  // Execute with timeout
+  // Execute with timeout protection
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000);
   let apiResp;
+  
   try {
     apiResp = await fetch(apiUrl, {
       method: 'POST',
@@ -124,96 +112,174 @@ export async function onRequest(context) {
     return json({
       error: '请求上游API失败',
       details: e.message || String(e),
-      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
-      requestSent: forwardBody
+      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config)
     }, 502, corsHeaders);
   }
   clearTimeout(timeoutId);
 
+  console.log('API Response status:', apiResp.status);
+  console.log('API Response headers:', Object.fromEntries(apiResp.headers.entries()));
+
   if (!apiResp.ok) {
     const errTxt = await safeText(apiResp);
+    console.error('API Error response:', errTxt);
     return json({
       error: '上游API返回错误',
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
-      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
+      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config),
       requestSent: forwardBody
     }, apiResp.status || 500, corsHeaders);
   }
 
-  // Non-stream parse
-  let apiJson;
-  const contentType = apiResp.headers.get('content-type') || '';
+  // Handle streaming response
+  let fullContent = '';
+  let buffer = '';
+  let chunkCount = 0;
+  
   try {
-    if (contentType.includes('application/json')) {
-      apiJson = await apiResp.json();
-    } else {
-      const txt = await safeText(apiResp);
-      try {
-        apiJson = JSON.parse(txt);
-      } catch {
-        apiJson = { choices: [{ message: { content: txt } }] };
+    const reader = apiResp.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          chunkCount++;
+          if (chunkCount <= 3) {
+            console.log(`Stream chunk ${chunkCount}:`, line.slice(0, 200));
+          }
+          try {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr) {
+              const data = JSON.parse(jsonStr);
+              // Handle different response formats
+              const content = data.choices?.[0]?.delta?.content 
+                           || data.candidates?.[0]?.content?.parts?.[0]?.text
+                           || data.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
+              if (content) {
+                fullContent += content;
+              }
+            }
+          } catch (e) {
+            console.log('Parse error for line:', line.slice(0, 100), e.message);
+          }
+        }
       }
     }
-  } catch (e) {
-    const txt = await safeText(apiResp);
-    apiJson = { choices: [{ message: { content: txt } }] };
-  }
+    
+    // Process final buffer
+    if (buffer.startsWith('data: ') && buffer !== 'data: [DONE]') {
+      try {
+        const jsonStr = buffer.slice(6).trim();
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          const content = data.choices?.[0]?.delta?.content 
+                       || data.candidates?.[0]?.content?.parts?.[0]?.text
+                       || data.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
+          if (content) {
+            fullContent += content;
+          }
+        }
+      } catch (e) {
+        console.log('Parse error for final buffer');
+      }
+    }
+    
+    console.log('Total stream chunks received:', chunkCount);
+    console.log('Stream content length:', fullContent.length);
+    console.log('First 500 chars of content:', fullContent.slice(0, 500));
+    
+    // Try to parse as JSON to get proper structure
+    let apiJson;
+    try {
+      apiJson = JSON.parse(fullContent);
+      console.log('Parsed API response structure:', Object.keys(apiJson));
+      if (apiJson.candidates) {
+        console.log('Found candidates array, length:', apiJson.candidates.length);
+      }
+      if (apiJson.choices) {
+        console.log('Found choices array, length:', apiJson.choices.length);
+      }
+    } catch {
+      console.log('Content is not JSON, treating as raw content');
+      // If not JSON, construct response object
+      apiJson = {
+        choices: [{
+          message: {
+            content: fullContent
+          }
+        }]
+      };
+    }
+    
+    // Extract image and optional text
+    const parsed = extractImageAndText(apiJson);
+    
+    console.log('Extracted imageUrl length:', parsed.imageUrl?.length || 0);
+    console.log('Extracted text length:', parsed.text?.length || 0);
+    
+    if (!parsed.imageUrl) {
+      console.log('Image not found in parsed content, searching raw...');
+      const alt = extractFromRaw(fullContent);
+      if (alt) {
+        console.log('Found image in raw response, length:', alt.length);
+        return json({
+          src: alt,
+          text: sanitizeText(parsed.text || ''),
+          debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true)
+        }, 200, corsHeaders);
+      }
 
-  // Extract image and optional text
-  const parsed = extractImageAndText(apiJson);
+      // Additional fallback: search for base64 patterns
+      const base64Match = fullContent.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
+      if (base64Match) {
+        console.log('Found potential base64 pattern, length:', base64Match[0].length);
+        const assumedImage = `data:image/png;base64,${base64Match[0]}`;
+        return json({
+          src: assumedImage,
+          text: sanitizeText(parsed.text || ''),
+          debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true)
+        }, 200, corsHeaders);
+      }
 
-  // Fallbacks if structured extraction failed
-  if (!parsed.imageUrl) {
-    const rawText = JSON.stringify(apiJson);
-    const alt = extractFromRaw(rawText);
-    if (alt) {
       return json({
-        src: alt,
-        text: sanitizeText(parsed.text || ''),
-        debugInfo: {
-          ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
-          requestSent: forwardBody,
-          providerResponsePreview: rawText.slice(0, 2000)
-        },
+        error: 'API响应中未找到图片数据',
+        providerResponsePreview: fullContent.slice(0, 2000),
+        debugInfo: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config),
+        requestSent: forwardBody,
         fullResponseForDebug: apiJson
-      }, 200, corsHeaders);
+      }, 500, corsHeaders);
     }
 
-    const base64Match = rawText.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
-    if (base64Match) {
-      const assumedImage = `data:image/png;base64,${base64Match[0]}`;
-      return json({
-        src: assumedImage,
-        text: sanitizeText(parsed.text || ''),
-        debugInfo: {
-          ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
-          requestSent: forwardBody,
-          providerResponsePreview: rawText.slice(0, 2000)
-        },
-        fullResponseForDebug: apiJson
-      }, 200, corsHeaders);
-    }
+    console.log('=== Success - returning image ===');
+    console.log('Image data URL prefix:', parsed.imageUrl.slice(0, 50));
 
     return json({
-      error: 'API响应中未找到图片数据',
-      providerResponsePreview: JSON.stringify(apiJson).slice(0, 2000),
-      debugInfo: buildDebug(model, aspectRatio, images.length, generationConfig),
-      requestSent: forwardBody,
-      fullResponseForDebug: apiJson
-    }, 500, corsHeaders);
+      src: parsed.imageUrl,
+      text: sanitizeText(parsed.text || ''),
+      debugInfo: {
+        ...buildDebug(model, aspectRatio, images.length, forwardBody.generation_config, true),
+        requestSent: forwardBody,
+        streamChunks: chunkCount
+      }
+    }, 200, corsHeaders);
+    
+  } catch (e) {
+    console.error('Stream processing error:', e);
+    return json({
+      error: '处理流式响应失败',
+      details: e.message || String(e),
+      debug: buildDebug(model, aspectRatio, images.length, forwardBody.generation_config)
+    }, 502, corsHeaders);
   }
-
-  return json({
-    src: parsed.imageUrl,
-    text: sanitizeText(parsed.text || ''),
-    debugInfo: {
-      ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
-      requestSent: forwardBody
-    },
-    fullResponseForDebug: apiJson
-  }, 200, corsHeaders);
 }
 
 // Helpers
@@ -264,93 +330,146 @@ function sanitizeText(text) {
 }
 
 function buildDebug(model, aspectRatio, imagesCount, config, success = false) {
-  return { model, aspectRatio, imagesCount, success, config };
+  return {
+    model,
+    aspectRatio,
+    imagesCount,
+    success,
+    config
+  };
 }
 
 function extractImageAndText(apiJson) {
   let imageUrl = null;
   let text = '';
 
-  // Gemini-style (candidates)
+  // Check for Gemini format (candidates array)
   const candidate = apiJson?.candidates?.[0];
   const parts = candidate?.content?.parts;
+
   if (Array.isArray(parts)) {
+    console.log('Extracting from Gemini candidates format, parts count:', parts.length);
     for (const part of parts) {
-      if (part?.text) text += part.text;
-      if (part?.inline_data?.data) {
+      console.log('Part type:', part.type || 'unknown', 'keys:', Object.keys(part));
+      // Text part
+      if (part.text) {
+        text += part.text;
+      }
+      // Inline image data
+      if (part.inline_data) {
         const mimeType = part.inline_data.mime_type || 'image/png';
-        imageUrl = `data:${mimeType};base64,${part.inline_data.data}`;
+        const data = part.inline_data.data;
+        console.log('Found inline_data, mime:', mimeType, 'data length:', data.length);
+        imageUrl = `data:${mimeType};base64,${data}`;
         break;
       }
-      if (part?.image_url?.url) {
+      // Image URL
+      if (part.image_url?.url) {
+        console.log('Found image_url');
         imageUrl = part.image_url.url;
         break;
       }
     }
   }
 
-  // OpenAI-style fallback
+  // Fallback: check OpenAI format
   if (!imageUrl) {
+    console.log('No image in Gemini format, trying OpenAI format');
     const choice = apiJson?.choices?.[0];
     const messageContent = choice?.message?.content;
 
     if (typeof messageContent === 'string') {
+      console.log('Message content is string, length:', messageContent.length);
       text = messageContent;
+      // Direct data URI
       const dataUriMatch = text.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=\s\n\r]+/);
-      if (dataUriMatch) imageUrl = dataUriMatch[0].replace(/[\s\n\r]/g, '');
+      if (dataUriMatch) {
+        console.log('Found data URI in string');
+        imageUrl = dataUriMatch[0].replace(/[\s\n\r]/g, '');
+      }
+      // Markdown image
       if (!imageUrl) {
         const mdMatch = text.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/);
-        if (mdMatch) imageUrl = mdMatch[1];
+        if (mdMatch) {
+          console.log('Found markdown image');
+          imageUrl = mdMatch[1];
+        }
       }
+      // Plain URL
       if (!imageUrl) {
         const urlMatch = text.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|gif|webp)/i);
-        if (urlMatch) imageUrl = urlMatch[0];
+        if (urlMatch) {
+          console.log('Found plain URL');
+          imageUrl = urlMatch[0];
+        }
       }
     } else if (Array.isArray(messageContent)) {
+      console.log('Message content is array, length:', messageContent.length);
       for (const item of messageContent) {
-        if (item?.type === 'image_url' && item.image_url?.url) { imageUrl = item.image_url.url; break; }
-        if (item?.type === 'image' && item.source?.data) {
-          const mt = item.source.media_type || 'png';
-          imageUrl = `data:image/${mt};base64,${item.source.data}`;
+        console.log('Item type:', item?.type);
+        if (item?.type === 'image_url' && item.image_url?.url) {
+          imageUrl = item.image_url.url;
           break;
+        } else if (item?.type === 'image' && item.source?.data) {
+          imageUrl = `data:image/${item.source.media_type || 'png'};base64,${item.source.data}`;
+          break;
+        } else if (item?.type === 'text' && item.text) {
+          text += item.text;
         }
-        if (item?.type === 'text' && item.text) text += item.text;
       }
     }
   }
 
+  // Deep search if still nothing found
   if (!imageUrl) {
+    console.log('No image found in standard formats, doing deep search');
     const deep = deepSearchForImage(apiJson);
-    if (deep) imageUrl = deep;
+    if (deep) {
+      console.log('Deep search found image');
+      imageUrl = deep;
+    }
   }
 
   return { imageUrl, text };
 }
 
-function deepSearchForImage(obj) {
+function deepSearchForImage(obj, depth = 0) {
   try {
-    if (!obj || typeof obj !== 'object') return null;
-
+    if (!obj || typeof obj !== 'object' || depth > 10) return null;
+    
+    // Check for inline_data structure (Gemini format)
     if (obj.inline_data?.data) {
       const mimeType = obj.inline_data.mime_type || 'image/png';
+      console.log(`[depth=${depth}] Found inline_data`);
       return `data:${mimeType};base64,${obj.inline_data.data}`;
     }
-    if (typeof obj.image === 'string' && obj.image.startsWith('data:image')) return obj.image;
-    if (typeof obj.url === 'string' && obj.url.startsWith('http')) return obj.url;
-    if (typeof obj.data === 'string' && obj.data.length > 100) {
+    
+    // Direct common fields
+    if (obj.image && typeof obj.image === 'string' && obj.image.startsWith('data:image')) {
+      console.log(`[depth=${depth}] Found obj.image`);
+      return obj.image;
+    }
+    if (obj.url && typeof obj.url === 'string' && obj.url.startsWith('http')) {
+      console.log(`[depth=${depth}] Found obj.url`);
+      return obj.url;
+    }
+    if (obj.data && typeof obj.data === 'string' && obj.data.length > 100) {
+      console.log(`[depth=${depth}] Found obj.data`);
       return `data:image/png;base64,${obj.data}`;
     }
-
+    
+    // Recurse into arrays
     if (Array.isArray(obj)) {
-      for (const item of obj) {
-        const r = deepSearchForImage(item);
-        if (r) return r;
+      for (let i = 0; i < obj.length; i++) {
+        const result = deepSearchForImage(obj[i], depth + 1);
+        if (result) return result;
       }
-    } else {
-      for (const k of Object.keys(obj)) {
-        const r = deepSearchForImage(obj[k]);
-        if (r) return r;
-      }
+    }
+    
+    // Recurse into objects
+    for (const key of Object.keys(obj)) {
+      const result = deepSearchForImage(obj[key], depth + 1);
+      if (result) return result;
     }
   } catch {}
   return null;
@@ -358,11 +477,18 @@ function deepSearchForImage(obj) {
 
 function extractFromRaw(raw) {
   try {
+    // Look for data URI
     const m = raw.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+\/=\\n\\r\\s]+/);
-    if (m) return m[0].replace(/\\n|\\r|\\s|\\/g, '').replace(/[\s\n\r]/g, '');
+    if (m) {
+      console.log('extractFromRaw: found data URI');
+      return m[0].replace(/\\n|\\r|\\s|\\/g, '').replace(/[\s\n\r]/g, '');
+    }
+    // Look for standalone base64 (at least 500 chars)
     const base64Match = raw.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
-    if (base64Match) return `data:image/png;base64,${base64Match[0]}`;
+    if (base64Match) {
+      console.log('extractFromRaw: found base64 pattern');
+      return `data:image/png;base64,${base64Match[0]}`;
+    }
   } catch {}
   return null;
 }
-
