@@ -92,7 +92,7 @@ export async function onRequest(context) {
       { role: 'user', content }
     ],
     // Non-stream to ensure config is applied reliably across proxies
-    stream: false,
+    stream: true,
     // Primary (snake_case) placement at top-level
     generation_config: generationConfig,
     // Mirror into extra_body for proxies that only read from here
@@ -365,3 +365,4 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
+
