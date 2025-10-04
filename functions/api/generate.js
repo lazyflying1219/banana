@@ -101,7 +101,7 @@ export async function onRequest(context) {
       { role: 'user', content }
     ],
     // Non-stream to ensure config is applied reliably
-    stream: false,
+    stream: true,
     // Primary placement (snake_case)
     generation_config: generationConfig,
     // Mirror into extra_body for maximum compatibility
@@ -408,3 +408,4 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
+
