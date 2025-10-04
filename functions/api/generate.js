@@ -1,4 +1,4 @@
-// Cloudflare Pages Function: /api/generate - Fixed for VELOERA compatibility
+// Cloudflare Pages Function: /api/generate - With detailed debug logging
 // Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image-preview
 
 export async function onRequest(context) {
@@ -45,6 +45,10 @@ export async function onRequest(context) {
 
   // Aspect ratio passthrough
   const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
+  
+  console.log('=== API Request Debug ===');
+  console.log('Received aspectRatio from frontend:', body.aspectRatio);
+  console.log('Normalized aspectRatio:', aspectRatio);
 
   // Optional user images (data URLs or remote URLs)
   const images = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
@@ -62,13 +66,15 @@ export async function onRequest(context) {
   }
 
   // VELOERA/Gemini config structure - use snake_case as shown in working example
-  const generationConfig = {
+  const generation_Config = {
     thinkingConfig: null,
-    responseModalities: ['TEXT', 'IMAGE'],  // Include both TEXT and IMAGE
-    image_config: {  // Use snake_case: image_config not imageConfig
-      aspect_ratio: aspectRatio  // Use snake_case: aspect_ratio not aspectRatio
+    responseModalities: ['TEXT', 'IMAGE'],
+    image_config: {
+      aspect_ratio: aspectRatio
     }
   };
+
+  console.log('Generated config object:', JSON.stringify(generationConfig, null, 2));
 
   // Final request body - use OpenAI messages format with generation_config
   const forwardBody = {
@@ -80,9 +86,12 @@ export async function onRequest(context) {
       }
     ],
     stream: true,
-    // Use snake_case: generation_config (this is the key!)
     generation_config: generationConfig
   };
+
+  console.log('=== Full request body to API ===');
+  console.log(JSON.stringify(forwardBody, null, 2));
+  console.log('=== End request body ===');
 
   const apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
@@ -111,8 +120,12 @@ export async function onRequest(context) {
   }
   clearTimeout(timeoutId);
 
+  console.log('API Response status:', apiResp.status);
+  console.log('API Response headers:', Object.fromEntries(apiResp.headers.entries()));
+
   if (!apiResp.ok) {
     const errTxt = await safeText(apiResp);
+    console.error('API Error response:', errTxt);
     return json({
       error: '上游API返回错误',
       status: apiResp.status,
@@ -126,6 +139,7 @@ export async function onRequest(context) {
   // Handle streaming response
   let fullContent = '';
   let buffer = '';
+  let chunkCount = 0;
   
   try {
     const reader = apiResp.body.getReader();
@@ -141,6 +155,10 @@ export async function onRequest(context) {
       
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          chunkCount++;
+          if (chunkCount <= 3) {
+            console.log(`Stream chunk ${chunkCount}:`, line.slice(0, 200));
+          }
           try {
             const jsonStr = line.slice(6).trim();
             if (jsonStr) {
@@ -154,7 +172,7 @@ export async function onRequest(context) {
               }
             }
           } catch (e) {
-            console.log('Parse error for line:', line.slice(0, 100));
+            console.log('Parse error for line:', line.slice(0, 100), e.message);
           }
         }
       }
@@ -178,13 +196,23 @@ export async function onRequest(context) {
       }
     }
     
+    console.log('Total stream chunks received:', chunkCount);
     console.log('Stream content length:', fullContent.length);
+    console.log('First 500 chars of content:', fullContent.slice(0, 500));
     
     // Try to parse as JSON to get proper structure
     let apiJson;
     try {
       apiJson = JSON.parse(fullContent);
+      console.log('Parsed API response structure:', Object.keys(apiJson));
+      if (apiJson.candidates) {
+        console.log('Found candidates array, length:', apiJson.candidates.length);
+      }
+      if (apiJson.choices) {
+        console.log('Found choices array, length:', apiJson.choices.length);
+      }
     } catch {
+      console.log('Content is not JSON, treating as raw content');
       // If not JSON, construct response object
       apiJson = {
         choices: [{
@@ -198,11 +226,14 @@ export async function onRequest(context) {
     // Extract image and optional text
     const parsed = extractImageAndText(apiJson);
     
+    console.log('Extracted imageUrl length:', parsed.imageUrl?.length || 0);
+    console.log('Extracted text length:', parsed.text?.length || 0);
+    
     if (!parsed.imageUrl) {
       console.log('Image not found in parsed content, searching raw...');
       const alt = extractFromRaw(fullContent);
       if (alt) {
-        console.log('Found image in raw response');
+        console.log('Found image in raw response, length:', alt.length);
         return json({
           src: alt,
           text: sanitizeText(parsed.text || ''),
@@ -213,7 +244,7 @@ export async function onRequest(context) {
       // Additional fallback: search for base64 patterns
       const base64Match = fullContent.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
       if (base64Match) {
-        console.log('Found potential base64 pattern');
+        console.log('Found potential base64 pattern, length:', base64Match[0].length);
         const assumedImage = `data:image/png;base64,${base64Match[0]}`;
         return json({
           src: assumedImage,
@@ -231,16 +262,21 @@ export async function onRequest(context) {
       }, 500, corsHeaders);
     }
 
+    console.log('=== Success - returning image ===');
+    console.log('Image data URL prefix:', parsed.imageUrl.slice(0, 50));
+
     return json({
       src: parsed.imageUrl,
       text: sanitizeText(parsed.text || ''),
       debugInfo: {
         ...buildDebug(model, aspectRatio, images.length, generationConfig, true),
-        requestSent: forwardBody
+        requestSent: forwardBody,
+        streamChunks: chunkCount
       }
     }, 200, corsHeaders);
     
   } catch (e) {
+    console.error('Stream processing error:', e);
     return json({
       error: '处理流式响应失败',
       details: e.message || String(e),
@@ -315,7 +351,9 @@ function extractImageAndText(apiJson) {
   const parts = candidate?.content?.parts;
 
   if (Array.isArray(parts)) {
+    console.log('Extracting from Gemini candidates format, parts count:', parts.length);
     for (const part of parts) {
+      console.log('Part type:', part.type || 'unknown', 'keys:', Object.keys(part));
       // Text part
       if (part.text) {
         text += part.text;
@@ -324,11 +362,13 @@ function extractImageAndText(apiJson) {
       if (part.inline_data) {
         const mimeType = part.inline_data.mime_type || 'image/png';
         const data = part.inline_data.data;
+        console.log('Found inline_data, mime:', mimeType, 'data length:', data.length);
         imageUrl = `data:${mimeType};base64,${data}`;
         break;
       }
       // Image URL
       if (part.image_url?.url) {
+        console.log('Found image_url');
         imageUrl = part.image_url.url;
         break;
       }
@@ -337,28 +377,39 @@ function extractImageAndText(apiJson) {
 
   // Fallback: check OpenAI format
   if (!imageUrl) {
+    console.log('No image in Gemini format, trying OpenAI format');
     const choice = apiJson?.choices?.[0];
     const messageContent = choice?.message?.content;
 
     if (typeof messageContent === 'string') {
+      console.log('Message content is string, length:', messageContent.length);
       text = messageContent;
       // Direct data URI
       const dataUriMatch = text.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+/=\s\n\r]+/);
       if (dataUriMatch) {
+        console.log('Found data URI in string');
         imageUrl = dataUriMatch[0].replace(/[\s\n\r]/g, '');
       }
       // Markdown image
       if (!imageUrl) {
         const mdMatch = text.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/);
-        if (mdMatch) imageUrl = mdMatch[1];
+        if (mdMatch) {
+          console.log('Found markdown image');
+          imageUrl = mdMatch[1];
+        }
       }
       // Plain URL
       if (!imageUrl) {
         const urlMatch = text.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|gif|webp)/i);
-        if (urlMatch) imageUrl = urlMatch[0];
+        if (urlMatch) {
+          console.log('Found plain URL');
+          imageUrl = urlMatch[0];
+        }
       }
     } else if (Array.isArray(messageContent)) {
+      console.log('Message content is array, length:', messageContent.length);
       for (const item of messageContent) {
+        console.log('Item type:', item?.type);
         if (item?.type === 'image_url' && item.image_url?.url) {
           imageUrl = item.image_url.url;
           break;
@@ -374,41 +425,53 @@ function extractImageAndText(apiJson) {
 
   // Deep search if still nothing found
   if (!imageUrl) {
+    console.log('No image found in standard formats, doing deep search');
     const deep = deepSearchForImage(apiJson);
-    if (deep) imageUrl = deep;
+    if (deep) {
+      console.log('Deep search found image');
+      imageUrl = deep;
+    }
   }
 
   return { imageUrl, text };
 }
 
-function deepSearchForImage(obj) {
+function deepSearchForImage(obj, depth = 0) {
   try {
-    if (!obj || typeof obj !== 'object') return null;
+    if (!obj || typeof obj !== 'object' || depth > 10) return null;
     
     // Check for inline_data structure (Gemini format)
     if (obj.inline_data?.data) {
       const mimeType = obj.inline_data.mime_type || 'image/png';
+      console.log(`[depth=${depth}] Found inline_data`);
       return `data:${mimeType};base64,${obj.inline_data.data}`;
     }
     
     // Direct common fields
-    if (obj.image && typeof obj.image === 'string' && obj.image.startsWith('data:image')) return obj.image;
-    if (obj.url && typeof obj.url === 'string' && obj.url.startsWith('http')) return obj.url;
+    if (obj.image && typeof obj.image === 'string' && obj.image.startsWith('data:image')) {
+      console.log(`[depth=${depth}] Found obj.image`);
+      return obj.image;
+    }
+    if (obj.url && typeof obj.url === 'string' && obj.url.startsWith('http')) {
+      console.log(`[depth=${depth}] Found obj.url`);
+      return obj.url;
+    }
     if (obj.data && typeof obj.data === 'string' && obj.data.length > 100) {
+      console.log(`[depth=${depth}] Found obj.data`);
       return `data:image/png;base64,${obj.data}`;
     }
     
     // Recurse into arrays
     if (Array.isArray(obj)) {
-      for (const item of obj) {
-        const result = deepSearchForImage(item);
+      for (let i = 0; i < obj.length; i++) {
+        const result = deepSearchForImage(obj[i], depth + 1);
         if (result) return result;
       }
     }
     
     // Recurse into objects
     for (const key of Object.keys(obj)) {
-      const result = deepSearchForImage(obj[key]);
+      const result = deepSearchForImage(obj[key], depth + 1);
       if (result) return result;
     }
   } catch {}
@@ -420,11 +483,13 @@ function extractFromRaw(raw) {
     // Look for data URI
     const m = raw.match(/data:image\/[a-zA-Z]+;base64,[A-Za-z0-9+\/=\\n\\r\\s]+/);
     if (m) {
+      console.log('extractFromRaw: found data URI');
       return m[0].replace(/\\n|\\r|\\s|\\/g, '').replace(/[\s\n\r]/g, '');
     }
     // Look for standalone base64 (at least 500 chars)
     const base64Match = raw.match(/[A-Za-z0-9+\/]{500,}={0,2}/);
     if (base64Match) {
+      console.log('extractFromRaw: found base64 pattern');
       return `data:image/png;base64,${base64Match[0]}`;
     }
   } catch {}
