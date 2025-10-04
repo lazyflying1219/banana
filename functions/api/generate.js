@@ -66,7 +66,7 @@ export async function onRequest(context) {
   }
 
   // VELOERA/Gemini config structure - use snake_case as shown in working example
-  const generation_Config = {
+  const generationConfig = {
     thinkingConfig: null,
     responseModalities: ['TEXT', 'IMAGE'],
     image_config: {
@@ -495,3 +495,4 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
+
