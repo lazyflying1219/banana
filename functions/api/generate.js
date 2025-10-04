@@ -1,4 +1,4 @@
-// Cloudflare Pages Function: /api/generate - Fixed to match official Gemini API
+// Cloudflare Pages Function: /api/generate - Fixed for veloe proxy compatibility
 // Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image-preview
 
 export async function onRequest(context) {
@@ -49,54 +49,43 @@ export async function onRequest(context) {
   // Optional user images (data URLs or remote URLs)
   const images = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
 
-  // Build Gemini-style parts array
-  const parts = [
-    { text: optimizedPrompt }
+  // Build multi-modal content array for OpenAI format
+  const content = [
+    { type: 'text', text: optimizedPrompt }
   ];
   
-  // Add images if provided
   for (const img of images) {
-    if (img.startsWith('data:image/')) {
-      // Extract base64 data from data URL
-      const matches = img.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
-      if (matches) {
-        parts.push({
-          inline_data: {
-            mime_type: `image/${matches[1]}`,
-            data: matches[2]
-          }
-        });
-      }
-    } else {
-      // Remote URL - note: Gemini may not support remote URLs directly
-      // You might need to fetch and convert to base64
-      parts.push({
-        inline_data: {
-          mime_type: 'image/jpeg',
-          data: img
-        }
-      });
-    }
+    content.push({
+      type: 'image_url',
+      image_url: { url: img }
+    });
   }
 
-  // Official Gemini API format - match the examples exactly
+  // Gemini config structure (as per official docs)
   const config = {
-    responseModalities: ['IMAGE'], // Capital 'IMAGE' as per official examples
+    thinkingConfig: null,
+    responseModalities: ['IMAGE'],  // Use 'IMAGE' not 'TEXT' when generating images
     imageConfig: {
       aspectRatio: aspectRatio
     }
   };
 
-  // Final request body - use Gemini format, not OpenAI format
+  // Final request body - use OpenAI messages format but add Gemini config
   const forwardBody = {
     model,
-    contents: [
-      {
-        role: 'user',
-        parts: parts
+    messages: [
+      { 
+        role: 'user', 
+        content: content 
       }
     ],
-    config: config
+    stream: true,
+    // Add config at root level
+    config: config,
+    // Also try in extra_body for compatibility
+    extra_body: {
+      config: config
+    }
   };
 
   const apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
@@ -160,7 +149,7 @@ export async function onRequest(context) {
             const jsonStr = line.slice(6).trim();
             if (jsonStr) {
               const data = JSON.parse(jsonStr);
-              // Handle both OpenAI-style and Gemini-style responses
+              // Handle different response formats
               const content = data.choices?.[0]?.delta?.content 
                            || data.candidates?.[0]?.content?.parts?.[0]?.text
                            || data.candidates?.[0]?.content?.parts?.[0]?.inline_data?.data;
@@ -202,11 +191,9 @@ export async function onRequest(context) {
     } catch {
       // If not JSON, construct response object
       apiJson = {
-        candidates: [{
-          content: {
-            parts: [{
-              text: fullContent
-            }]
+        choices: [{
+          message: {
+            content: fullContent
           }
         }]
       };
@@ -344,7 +331,7 @@ function extractImageAndText(apiJson) {
         imageUrl = `data:${mimeType};base64,${data}`;
         break;
       }
-      // Image URL (less common)
+      // Image URL
       if (part.image_url?.url) {
         imageUrl = part.image_url.url;
         break;
@@ -412,7 +399,6 @@ function deepSearchForImage(obj) {
     if (obj.image && typeof obj.image === 'string' && obj.image.startsWith('data:image')) return obj.image;
     if (obj.url && typeof obj.url === 'string' && obj.url.startsWith('http')) return obj.url;
     if (obj.data && typeof obj.data === 'string' && obj.data.length > 100) {
-      // Assume it's base64 image data
       return `data:image/png;base64,${obj.data}`;
     }
     
