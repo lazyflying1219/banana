@@ -39,8 +39,8 @@ export async function onRequest(context) {
   const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
   
   // 将比例转换为模型名称格式 (例如: "21:9" -> "ban21:9-gemini-2.5-flash-image-preview")
-  const ratioForModel = aspectRatio.replace(':', '');  // "21:9" -> "219"
-  const model = `ban${ratioForModel}-gemini-2.5-flash-image-preview`;
+  // 注意：保留冒号，不移除
+  const model = `ban${aspectRatio}-gemini-2.5-flash-image-preview`;
   
   console.log('=== API Request Debug ===');
   console.log('Received aspectRatio from frontend:', body.aspectRatio);
