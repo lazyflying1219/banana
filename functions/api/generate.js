@@ -29,26 +29,31 @@ export async function onRequest(context) {
     }, 500, corsHeaders);
   }
 
-  const model = String(body.model || 'vertexpic2-gemini-2.5-flash-image-preview').trim();
   const promptRaw = String(body.prompt || '').trim();
   if (!promptRaw) {
     return json({ error: '缺少提示词 prompt' }, 400, corsHeaders);
   }
 
-  // Ensure prompt clearly requests an image when using Gemini image preview variants
-  let optimizedPrompt = promptRaw;
-  const pr = optimizedPrompt.toLowerCase();
-  if ((model.includes('gemini') || model.includes('image') || model.includes('vertexpic'))
-      && !(['generate', 'create', 'draw', '生成', '画'].some(k => pr.includes(k)))) {
-    optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
-  }
-
-  // Aspect ratio passthrough
+  // Aspect ratio to model name mapping
+  // 根据选择的比例动态生成对应的模型名称
   const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
+  
+  // 将比例转换为模型名称格式 (例如: "21:9" -> "ban21:9-gemini-2.5-flash-image-preview")
+  const ratioForModel = aspectRatio.replace(':', '');  // "21:9" -> "219"
+  const model = `ban${ratioForModel}-gemini-2.5-flash-image-preview`;
   
   console.log('=== API Request Debug ===');
   console.log('Received aspectRatio from frontend:', body.aspectRatio);
   console.log('Normalized aspectRatio:', aspectRatio);
+  console.log('Generated model name:', model);
+
+  // Ensure prompt clearly requests an image when using Gemini image preview variants
+  let optimizedPrompt = promptRaw;
+  const pr = optimizedPrompt.toLowerCase();
+  if ((model.includes('gemini') || model.includes('image') || model.includes('ban'))
+      && !(['generate', 'create', 'draw', '生成', '画'].some(k => pr.includes(k)))) {
+    optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
+  }
 
   // Optional user images (data URLs or remote URLs)
   const images = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
@@ -65,26 +70,21 @@ export async function onRequest(context) {
     });
   }
 
-  // Gemini API format - Direct top-level generation_config
-  // Matching your working VELOERA parameter override configuration
-  // Reference: https://ai.google.dev/gemini-api/docs/image-generation?hl=zh-cn
+  // 简化的请求体：完全依赖模型名称来控制图片比例
+  // 模型名称格式: ban{ratio}-gemini-2.5-flash-image-preview
+  // 例如: ban219-gemini-2.5-flash-image-preview (对应 21:9 比例)
+  // 例如: ban169-gemini-2.5-flash-image-preview (对应 16:9 比例)
+  // 例如: ban11-gemini-2.5-flash-image-preview (对应 1:1 比例)
   const forwardBody = {
-    model,
+    model,  // 使用根据aspectRatio动态生成的模型名称
     messages: [
       {
         role: 'user',
         content: content
       }
     ],
-    stream: true,
-    // Direct top-level configuration matching your working VELOERA format
-    generation_config: {
-      thinkingConfig: null,
-      response_modalities: ['TEXT', 'IMAGE'],
-      image_config: {
-        aspect_ratio: aspectRatio
-      }
-    }
+    stream: true
+    // 不再需要 generation_config，完全由模型名称控制比例
   };
 
   console.log('=== Full request body to API ===');
