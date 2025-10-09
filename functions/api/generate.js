@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: /api/generate - With detailed debug logging
-// Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image-preview
+// Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -38,9 +38,9 @@ export async function onRequest(context) {
   // 根据选择的比例动态生成对应的模型名称
   const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
   
-  // 将比例转换为模型名称格式 (例如: "21:9" -> "ban21:9-gemini-2.5-flash-image-preview")
+  // 将比例转换为模型名称格式 (例如: "21:9" -> "ban21:9-gemini-2.5-flash-image")
   // 注意：保留冒号，不移除
-  const model = `ban${aspectRatio}-gemini-2.5-flash-image-preview`;
+  const model = `ban${aspectRatio}-gemini-2.5-flash-image`;
   
   console.log('=== API Request Debug ===');
   console.log('Received aspectRatio from frontend:', body.aspectRatio);
@@ -71,10 +71,10 @@ export async function onRequest(context) {
   }
 
   // 简化的请求体：完全依赖模型名称来控制图片比例
-  // 模型名称格式: ban{ratio}-gemini-2.5-flash-image-preview
-  // 例如: ban219-gemini-2.5-flash-image-preview (对应 21:9 比例)
-  // 例如: ban169-gemini-2.5-flash-image-preview (对应 16:9 比例)
-  // 例如: ban11-gemini-2.5-flash-image-preview (对应 1:1 比例)
+  // 模型名称格式: ban{ratio}-gemini-2.5-flash-image
+  // 例如: ban219-gemini-2.5-flash-image (对应 21:9 比例)
+  // 例如: ban169-gemini-2.5-flash-image (对应 16:9 比例)
+  // 例如: ban11-gemini-2.5-flash-image (对应 1:1 比例)
   const forwardBody = {
     model,  // 使用根据aspectRatio动态生成的模型名称
     messages: [
@@ -529,3 +529,4 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
+
