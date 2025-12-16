@@ -1,5 +1,5 @@
 // Cloudflare Pages Function: /api/generate - With detailed debug logging
-// Goal: guarantee aspect_ratio passthrough for vertexpic2-gemini-2.5-flash-image
+// Goal: Use VERTEXPIC-gemini-3-pro-image-preview model with aspect ratio in prompt
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -34,26 +34,34 @@ export async function onRequest(context) {
     return json({ error: '缺少提示词 prompt' }, 400, corsHeaders);
   }
 
-  // Aspect ratio to model name mapping
-  // 根据选择的比例动态生成对应的模型名称
-  const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
+  // 统一使用 VERTEXPIC-gemini-3-pro-image-preview 模型
+  const model = 'VERTEXPIC-gemini-3-pro-image-preview';
   
-  // 将比例转换为模型名称格式 (例如: "21:9" -> "ban21:9-gemini-2.5-flash-image")
-  // 注意：保留冒号，不移除
-  const model = `ban${aspectRatio}-gemini-2.5-flash-image`;
+  // 获取宽高比，用于添加到提示词中
+  const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
   
   console.log('=== API Request Debug ===');
   console.log('Received aspectRatio from frontend:', body.aspectRatio);
   console.log('Normalized aspectRatio:', aspectRatio);
-  console.log('Generated model name:', model);
+  console.log('Using model:', model);
 
-  // Ensure prompt clearly requests an image when using Gemini image preview variants
+  // 构建优化后的提示词，包含宽高比信息
   let optimizedPrompt = promptRaw;
+  
+  // 添加宽高比提示词
+  // 将比例格式从 "16:9" 转换为 "16：9" 或保持原样
+  const aspectRatioPrompt = `Image aspect ratio: ${aspectRatio}. `;
+  
+  // 确保提示词明确请求生成图片
   const pr = optimizedPrompt.toLowerCase();
-  if ((model.includes('gemini') || model.includes('image') || model.includes('ban'))
-      && !(['generate', 'create', 'draw', '生成', '画'].some(k => pr.includes(k)))) {
-    optimizedPrompt = `Generate an image: ${optimizedPrompt}`;
+  if (!(['generate', 'create', 'draw', '生成', '画'].some(k => pr.includes(k)))) {
+    optimizedPrompt = `Generate an image with aspect ratio ${aspectRatio}: ${optimizedPrompt}`;
+  } else {
+    // 如果已有生成关键词，在开头添加比例信息
+    optimizedPrompt = `${aspectRatioPrompt}${optimizedPrompt}`;
   }
+  
+  console.log('Optimized prompt with aspect ratio:', optimizedPrompt);
 
   // Optional user images (data URLs or remote URLs)
   const images = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
@@ -70,13 +78,11 @@ export async function onRequest(context) {
     });
   }
 
-  // 简化的请求体：完全依赖模型名称来控制图片比例
-  // 模型名称格式: ban{ratio}-gemini-2.5-flash-image
-  // 例如: ban219-gemini-2.5-flash-image (对应 21:9 比例)
-  // 例如: ban169-gemini-2.5-flash-image (对应 16:9 比例)
-  // 例如: ban11-gemini-2.5-flash-image (对应 1:1 比例)
+  // 简化的请求体：使用统一模型，通过提示词控制图片比例
+  // 模型: VERTEXPIC-gemini-3-pro-image-preview
+  // 比例通过提示词指定，如 "Image aspect ratio: 16:9"
   const forwardBody = {
-    model,  // 使用根据aspectRatio动态生成的模型名称
+    model,  // 统一使用 VERTEXPIC-gemini-3-pro-image-preview
     messages: [
       {
         role: 'user',
@@ -84,7 +90,7 @@ export async function onRequest(context) {
       }
     ],
     stream: true
-    // 不再需要 generation_config，完全由模型名称控制比例
+    // 比例通过提示词控制，不需要额外配置
   };
 
   console.log('=== Full request body to API ===');
@@ -529,4 +535,3 @@ function extractFromRaw(raw) {
   } catch {}
   return null;
 }
-
