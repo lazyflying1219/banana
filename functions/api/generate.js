@@ -96,35 +96,60 @@ export async function onRequest(context) {
 
   const apiUrl = 'https://veloe.onrender.com/v1/chat/completions';
 
-  // Execute with timeout protection
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  // Execute with retry logic for 429 errors
   let apiResp;
+  const maxRetries = 10;
+  const retryDelay = 2000; // 2 seconds
   
-  try {
-    apiResp = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(forwardBody),
-      signal: controller.signal
-    });
-  } catch (e) {
-    clearTimeout(timeoutId);
-    return json({
-      error: '请求上游API失败',
-      details: e.message || String(e),
-      debug: {
-        model,
-        aspectRatio,
-        imagesCount: images.length,
-        generationConfig: forwardBody.generation_config
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    
+    try {
+      apiResp = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(forwardBody),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      // If we get a 429, retry after delay
+      if (apiResp.status === 429 && attempt < maxRetries) {
+        console.log(`Received 429 (Too Many Requests), retrying ${attempt + 1}/${maxRetries} after ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        continue;
       }
-    }, 502, corsHeaders);
+      
+      // Success or non-retryable error, break the loop
+      break;
+      
+    } catch (e) {
+      clearTimeout(timeoutId);
+      
+      // If this was the last attempt, return error
+      if (attempt === maxRetries) {
+        return json({
+          error: '请求上游API失败',
+          details: e.message || String(e),
+          debug: {
+            model,
+            aspectRatio,
+            imagesCount: images.length,
+            generationConfig: forwardBody.generation_config,
+            retriesAttempted: attempt
+          }
+        }, 502, corsHeaders);
+      }
+      
+      // Otherwise retry after delay
+      console.log(`Request failed (${e.message}), retrying ${attempt + 1}/${maxRetries} after ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
-  clearTimeout(timeoutId);
 
   console.log('API Response status:', apiResp.status);
   console.log('API Response headers:', Object.fromEntries(apiResp.headers.entries()));
@@ -132,8 +157,14 @@ export async function onRequest(context) {
   if (!apiResp.ok) {
     const errTxt = await safeText(apiResp);
     console.error('API Error response:', errTxt);
+    
+    // Special message for 429 after all retries exhausted
+    const errorMessage = apiResp.status === 429
+      ? '上游API负载饱和（已重试10次）'
+      : '上游API返回错误';
+    
     return json({
-      error: '上游API返回错误',
+      error: errorMessage,
       status: apiResp.status,
       statusText: apiResp.statusText,
       details: errTxt?.slice(0, 2000),
@@ -141,7 +172,8 @@ export async function onRequest(context) {
         model,
         aspectRatio,
         imagesCount: images.length,
-        generationConfig: forwardBody.generation_config
+        generationConfig: forwardBody.generation_config,
+        note: apiResp.status === 429 ? 'Already retried 10 times with 2s intervals' : undefined
       },
       requestSent: forwardBody
     }, apiResp.status || 500, corsHeaders);
