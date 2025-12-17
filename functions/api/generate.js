@@ -40,26 +40,23 @@ export async function onRequest(context) {
   // 获取宽高比，用于添加到提示词中
   const aspectRatio = (body.aspectRatio && String(body.aspectRatio).trim()) || '1:1';
   
+  // 将比例格式从 "16:9" 转换为 "16：9"（使用中文冒号）
+  const aspectRatioForPrompt = aspectRatio.replace(':', '：');
+  
   console.log('=== API Request Debug ===');
   console.log('Received aspectRatio from frontend:', body.aspectRatio);
   console.log('Normalized aspectRatio:', aspectRatio);
+  console.log('Aspect ratio for prompt:', aspectRatioForPrompt);
   console.log('Using model:', model);
 
   // 构建优化后的提示词，包含宽高比信息
   let optimizedPrompt = promptRaw;
   
-  // 添加宽高比提示词
-  // 将比例格式从 "16:9" 转换为 "16：9" 或保持原样
-  const aspectRatioPrompt = `Image aspect ratio: ${aspectRatio}. `;
+  // 添加宽高比提示词（使用中文冒号格式）
+  const aspectRatioPrompt = `比例${aspectRatioForPrompt}。`;
   
-  // 确保提示词明确请求生成图片
-  const pr = optimizedPrompt.toLowerCase();
-  if (!(['generate', 'create', 'draw', '生成', '画'].some(k => pr.includes(k)))) {
-    optimizedPrompt = `Generate an image with aspect ratio ${aspectRatio}: ${optimizedPrompt}`;
-  } else {
-    // 如果已有生成关键词，在开头添加比例信息
-    optimizedPrompt = `${aspectRatioPrompt}${optimizedPrompt}`;
-  }
+  // 在提示词开头添加比例信息
+  optimizedPrompt = `${aspectRatioPrompt}${optimizedPrompt}`;
   
   console.log('Optimized prompt with aspect ratio:', optimizedPrompt);
 
